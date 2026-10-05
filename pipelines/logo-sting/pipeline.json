@@ -1,0 +1,39 @@
+{
+  "slug": "logo-sting",
+  "name": "Logo sting",
+  "description": "A 3 to 8 second animated logo for the start or end of your videos. Three directions as stills, then the final. The quickest way to try Mortiflix.",
+  "makes": "video",
+  "shared_skills": ["motion-design", "remotion-motion", "final-pass"],
+  "intake": [
+    { "id": "logo", "label": "Your logo (SVG or a large PNG)", "type": "files", "required": true },
+    { "id": "mood", "label": "How should it feel?", "type": "text", "help": "e.g. calm and premium, playful, technical, bold" },
+    { "id": "length", "label": "Length", "type": "choice", "choices": ["3 s", "5 s", "8 s"], "default": "5 s" },
+    { "id": "background", "label": "Background", "type": "choice", "choices": ["Dark", "Light", "Brand colour", "Transparent (ProRes 4444)"], "default": "Dark" }
+  ],
+  "steps": [
+    { "key": "directions", "name": "Directions", "review": "frames", "work": ["stills"],
+      "describe": "Three different motion ideas, each shown as a strip of 3 key moments (start, middle, settled logo), plus a one-line description. Ask which one." },
+    { "key": "final", "name": "Final", "review": "video", "work": ["motion", "audio"], "delivers": true }
+  ],
+  "status_lines": {
+    "logo": "Studying your logo",
+    "directions": "Sketching three directions",
+    "build": "Animating your logo",
+    "qc": "Checking every frame",
+    "deliver": "Packaging your sting"
+  },
+  "checks": [
+    { "id": "logo-intact", "title": "The logo is never distorted", "applies_to": ["stills", "motion"],
+      "how": "The settled logo matches the file exactly: proportions, colours, spacing. It's never stretched, recoloured or redrawn (animate its parts, don't change them)." },
+    { "id": "settled-hold", "title": "The logo holds at the end", "applies_to": ["motion"],
+      "how": "The final logo sits still for at least the last 1.5 seconds (or 1 second on a 3 s sting) so it can be read and cut from." },
+    { "id": "text-safe-area", "title": "Inside the safe area", "applies_to": ["stills", "motion"],
+      "how": "The settled logo sits at least 10% inside each frame edge; nothing clips during the motion." },
+    { "id": "frame-sheet", "title": "Every frame makes sense", "applies_to": ["motion"],
+      "how": "qc.mjs passes (frozen = the designed end hold is fine: say so) and you looked at its sheet." },
+    { "id": "format", "title": "The right size, rate and length", "applies_to": ["motion"],
+      "how": "qc.mjs: 1920x1080 (or the brief's), constant 30 fps (or 60 if asked), H.264 + AAC (ProRes 4444 for transparent), duration within 5%." },
+    { "id": "loudness", "title": "The sound sits right", "applies_to": ["audio"],
+      "how": "If it has sound: true peak ≤ -1 dBTP and loud enough to hear over nothing (-16 to -12 LUFS); no click at the start or end." }
+  ]
+}

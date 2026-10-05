@@ -1,0 +1,232 @@
+{
+  "slug": "explainer",
+  "name": "Explainer video",
+  "description": "A 30 second to 2 minute motion design explainer: script, style frames, animatic, final. Built in Remotion.",
+  "makes": "video",
+  "shared_skills": [
+    "motion-design",
+    "remotion-motion",
+    "voiceover",
+    "final-pass"
+  ],
+  "intake": [
+    {
+      "id": "topic",
+      "label": "What should the video explain?",
+      "type": "long",
+      "required": true,
+      "help": "The idea, product or process, who it's for, and the one thing a viewer should remember."
+    },
+    {
+      "id": "audience",
+      "label": "Who's watching?",
+      "type": "text"
+    },
+    {
+      "id": "length",
+      "label": "Length",
+      "type": "choice",
+      "choices": [
+        "30 s",
+        "60 s",
+        "90 s",
+        "2 min"
+      ],
+      "default": "60 s"
+    },
+    {
+      "id": "aspect",
+      "label": "Shape",
+      "type": "choice",
+      "choices": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "default": "16:9"
+    },
+    {
+      "id": "voice",
+      "label": "Narration",
+      "type": "choice",
+      "choices": [
+        "Narrated",
+        "On-screen text and music only"
+      ],
+      "default": "Narrated",
+      "help": "Narration needs a voice: an ElevenLabs key in the studio's session.env, or a local TTS. Without one, the studio asks."
+    },
+    {
+      "id": "script",
+      "label": "Your own script",
+      "type": "long",
+      "help": "If you have one, it's spoken word for word."
+    },
+    {
+      "id": "brand",
+      "label": "Logo, fonts, colours, references",
+      "type": "files"
+    }
+  ],
+  "steps": [
+    {
+      "key": "brief",
+      "name": "Brief",
+      "review": "questions",
+      "describe": "Restate the brief in plain words and ask the questions that change the video, each with a default."
+    },
+    {
+      "key": "script",
+      "name": "Script",
+      "review": "document",
+      "work": [
+        "script"
+      ],
+      "after": [
+        "brief"
+      ]
+    },
+    {
+      "key": "style-frames",
+      "name": "Style frames",
+      "review": "frames",
+      "work": [
+        "stills"
+      ],
+      "after": [
+        "brief"
+      ],
+      "describe": "Three to five finished-quality stills that fix the look. Runs beside the script."
+    },
+    {
+      "key": "animatic",
+      "name": "Animatic",
+      "review": "video",
+      "work": [
+        "motion",
+        "audio"
+      ],
+      "after": [
+        "script",
+        "style-frames"
+      ],
+      "describe": "Every beat timed to the voice (or to the music), simple motion, the approved look."
+    },
+    {
+      "key": "build",
+      "name": "Final build",
+      "review": "internal",
+      "work": [
+        "motion",
+        "audio"
+      ],
+      "after": [
+        "animatic"
+      ]
+    },
+    {
+      "key": "final",
+      "name": "Final",
+      "review": "video",
+      "work": [
+        "motion",
+        "audio"
+      ],
+      "after": [
+        "build"
+      ],
+      "delivers": true
+    }
+  ],
+  "status_lines": {
+    "brief": "Reading your brief",
+    "research": "Researching the topic",
+    "script": "Writing the script",
+    "frames": "Designing the look",
+    "voice": "Recording the narration",
+    "music": "Scoring the music",
+    "animatic": "Timing every beat",
+    "build": "Animating the final",
+    "qc": "Watching every frame before you do",
+    "deliver": "Packaging your video"
+  },
+  "checks": [
+    {
+      "id": "spelling-and-facts",
+      "title": "Every word, name and number is right",
+      "applies_to": [
+        "script",
+        "stills",
+        "motion"
+      ],
+      "how": "Read every on-screen word and every script line against the brief and your sources. Names, numbers, units and spelling exactly right; nothing claimed that the brief or a source doesn't support."
+    },
+    {
+      "id": "script-fits-length",
+      "title": "The script fits the length",
+      "applies_to": [
+        "script"
+      ],
+      "how": "Spoken words at about 150 per minute (count them) land within 10% of the target length, with room for the holds."
+    },
+    {
+      "id": "text-safe-area",
+      "title": "Text sits inside the title-safe area",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "In every still and in sampled frames, every text box sits at least 5% inside each frame edge; nothing is cut off or touching an edge."
+    },
+    {
+      "id": "no-collisions",
+      "title": "Nothing collides by accident",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "No text overlaps other text or a busy shape unless it's designed to; nothing is clipped by the frame or another layer."
+    },
+    {
+      "id": "text-contrast",
+      "title": "Text is readable",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "Body text has at least 4.5:1 contrast with what's behind it at its worst frame; every text block stays on screen long enough to read twice (about words / 3 + 1 seconds)."
+    },
+    {
+      "id": "frame-sheet",
+      "title": "Every second looked at",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "Run the final-pass skill's qc.mjs: no black, flash or frozen frames (unless designed), and look at its contact sheet (a frame per second) yourself. Every sampled frame makes visual sense."
+    },
+    {
+      "id": "format",
+      "title": "The right size, rate and length",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "ffprobe (qc.mjs) shows the brief's shape at 1080p or more, a constant frame rate, H.264 + AAC, and a duration within 5% of the target."
+    },
+    {
+      "id": "loudness",
+      "title": "Loudness and no clipping",
+      "applies_to": [
+        "audio"
+      ],
+      "how": "qc.mjs: integrated loudness -14 LUFS (±1) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
+    },
+    {
+      "id": "sync",
+      "title": "Picture and sound in sync",
+      "applies_to": [
+        "audio"
+      ],
+      "how": "Each spoken key word lands with its visual within 2 frames (check against the word timings); music hits land on cuts they were meant for."
+    }
+  ]
+}

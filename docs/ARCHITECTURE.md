@@ -1,0 +1,110 @@
+# Architecture
+
+Everything runs on one machine, in one Node process (`mortiflix serve` or `mortiflix run`), around one folder: the
+studio.
+
+```
+ you ── web studio / CLI ──▶  gates.mjs  ◀── bridge (Unix socket) ◀── mfx ◀── the session (Claude)
+                                  │                                            ▲
+                                  ▼                                            │
+                           state/<id>/ (the record)          runner.mjs ── backend: claude-code │ anthropic-api │ demo
+                                                                  │
+                                                     projects/<id>/ (the working folder, session cwd)
+```
+
+## The studio folder
+
+```
+~/Mortiflix/                       ($MORTIFLIX_STUDIO or --studio to move it)
+  config.json        settings, no secrets
+  secrets.json       API key, web token (mode 600)
+  session.env        KEY=value lines handed to sessions (e.g. ELEVENLABS_API_KEY)
+  checks.json        the studio's error checklist: proposed by sessions, approved by you
+  TASTE.md           what you like, learned across projects (sessions add with `mfx taste`)
+  pipelines/         your own pipelines (same slug overrides a built-in one)
+  projects/<id>/     the working folder: the session runs here
+  state/<id>/        the record: project.json, events.jsonl, the pinned pipeline, submissions, feedback, transcripts
+  run/               the runner lock, render logs, an npm cache for sandboxed sessions
+```
+
+The split matters: **sessions write to `projects/<id>/`; only Mortiflix writes to `state/<id>/`.** A submission's
+files are copied into the record when submitted, so what you reviewed can't change afterwards.
+
+## A project's life
+
+1. **Created** (`createProject`): the pipeline is snapshotted into `state/<id>/pipeline/` (with its shared skills).
+   The project is pinned to that snapshot forever; editing the pipeline later only affects new projects.
+2. **Started**: required intake answers are checked; the state becomes `queued`.
+3. **The runner** (`runner.mjs`) takes the oldest `queued` project, one session at a time:
+   - `prepareWorkdir` copies the pinned pipeline to `pipeline/`, its skills to `.claude/skills/`, the gate protocol
+     to `.mortiflix/GATES.md`, and the checklist on the first session;
+   - `writeTorch` writes `CLAUDE.md`: where things stand, the steps table, what you said, the error checks, the
+     brief (fenced as data), your taste, the journal;
+   - `openBridge` starts a private Unix socket with a per-session token;
+   - the backend runs the session with `MFX_SOCKET`/`MFX_TOKEN` in its environment and `bin/` on its `PATH`.
+4. **The session** works, talks to the studio only through `mfx`, submits at a gate, writes a handoff, and ends.
+5. **After it ends**, renders it left are stopped, usage is recorded, and the project's state is recomputed
+   (`settle`): `waiting` (your turn), `queued` (more to do), or `delivered`.
+6. **You respond** (web or CLI): approve, or ask for changes with notes; answer questions. The feedback lands in
+   `projects/<id>/feedback/` and the next `CLAUDE.md`, and the project is `queued` again.
+
+### Guards
+
+- Two sessions in a row that move nothing forward (no submission, step, question or handoff) pause the project
+  with the error, instead of burning tokens in a loop.
+- Eight sessions in a row without submitting or finishing a step also pause it.
+- A session past `maxSessionMinutes` is stopped; the next one picks up from the handoff.
+- One runner per studio (`run/runner.pid`), so `serve` and `run` never start sessions side by side.
+
+## The gates (`src/gates.mjs`)
+
+| Rule | Where |
+|---|---|
+| Only you approve a reviewed step | `respond()` is only reachable from the web API and the CLI, never from `mfx` |
+| Internal steps finish only with their checks | `stepDone()` |
+| Every check for the step's kind of work is reported, `fixed`/`n/a` with a note | `validateChecks()` |
+| Every note on the last version gets an entry in `pin_changes` | `submit()` |
+| Submitted files exist, are inside the working folder (symlinks resolved), and are copied | `submit()` |
+| A step can't start before the steps it runs after are finished | `stepView()` + `submit()`/`stepStart()` |
+| The review mode decides what must be submitted (frames need images, video needs a video, …) | `submit()` |
+| Status lines come from the pipeline's whitelist | `status()` |
+
+Steps have stored states (`working`, `in_review`, `changes`, `approved`, `done`) and derived ones (`ready` when
+everything it runs after is finished, otherwise `blocked`). Steps without a dependency between them can run side by
+side: the explainer's script and style frames do.
+
+## The bridge and `mfx`
+
+`bridge.mjs` is an HTTP server on a Unix socket in the OS temp dir, alive only during a session. `mfx` (`src/mfx.mjs`)
+posts JSON to it with the session's token. Commands map one to one onto `gates.mjs` (plus `render`, `render-wait`,
+`taste`, `feedback`, `files`). A refusal comes back as a plain sentence the session can act on ("pin_changes: note 2
+from directions v1 has no answer").
+
+## Renders (`renderq.mjs`)
+
+Heavy work (Remotion, anything that starts Chrome or the GPU) goes through `mfx render`, which queues it studio-wide
+and returns an id at once; `mfx render-wait <id>` waits up to a timeout. No tool call blocks for longer than a
+backend allows, and two renders never fight for memory. While a render waits or runs, you see "Waiting to render"
+or "Rendering: <label>".
+
+## Backends (`src/backends/`)
+
+A backend exports `run({ root, projectId, workdir, prompt, env, transcript, onActivity, signal, config })` and
+returns `{ ok, error?, usage?, cost_usd? }`; `available(config, root)` says whether it's set up.
+
+- **claude-code**: spawns `claude -p … --output-format stream-json` in the working folder with the configured
+  permission flags; parses the stream for the activity log; optional bubblewrap sandbox (`sandboxArgs`).
+- **anthropic-api**: a streaming agent loop on `client.beta.messages.stream` with the `bash_20250124` and
+  `text_editor_20250728` tools (executed locally: a persistent bash shell, an editor confined to the working folder
+  that returns images as image blocks), optional web search and fetch, adaptive thinking with a configurable effort,
+  automatic prompt caching, server-side compaction, and refusal fallbacks (`fallbacks: "default"`; blocks of a
+  declined attempt are dropped before they're sent back). Default model: `claude-opus-5-5`.
+- **demo**: no model; walks the gates with placeholder work through the real bridge.
+
+Adding a backend is adding a module with those two functions to `BACKENDS` in `runner.mjs`.
+
+## The web studio (`src/web/server.mjs`, `web/`)
+
+A plain `node:http` server and a no-build vanilla JS app. JSON API under `/api`, live updates over server-sent events
+(`/api/events`: `change` and `activity`), submitted media under `/files/<id>/reviews/…` with Range support. See
+[SECURITY.md](SECURITY.md) for its guards.

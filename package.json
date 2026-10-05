@@ -1,0 +1,49 @@
+{
+  "name": "mortiflix",
+  "version": "0.1.0",
+  "description": "A motion design studio on your own machine: Claude makes the video step by step, you approve every stage.",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GTKottman/mortiflix-oss.git"
+  },
+  "homepage": "https://github.com/GTKottman/mortiflix-oss",
+  "bugs": {
+    "url": "https://github.com/GTKottman/mortiflix-oss/issues"
+  },
+  "type": "module",
+  "bin": {
+    "mortiflix": "bin/mortiflix",
+    "mfx": "bin/mfx"
+  },
+  "files": [
+    "bin",
+    "src",
+    "web",
+    "pipelines",
+    "harness",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "start": "node bin/mortiflix serve"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.131.0"
+  },
+  "keywords": [
+    "video",
+    "motion-design",
+    "claude",
+    "claude-code",
+    "remotion",
+    "agent",
+    "harness",
+    "pipeline"
+  ]
+}
