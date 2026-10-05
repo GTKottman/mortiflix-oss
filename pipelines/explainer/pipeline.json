@@ -54,7 +54,7 @@
         "On-screen text and music only"
       ],
       "default": "Narrated",
-      "help": "Narration needs a voice: an ElevenLabs key in the studio's session.env, or a local TTS. Without one, the studio asks."
+      "help": "Uses the studio's narration voice (Settings › Narration: ElevenLabs, or Qwen3-TTS on your own GPU). With none set up, the studio asks."
     },
     {
       "id": "script",

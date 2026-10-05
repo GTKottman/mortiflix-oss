@@ -46,7 +46,9 @@ rule it out. If you hand a session files or links from sources you don't trust, 
 
 - The Anthropic API key (Settings or `mortiflix config api-key`) is stored in `secrets.json` (mode 600) and is never
   returned by the API or shown in the UI. Sessions don't get it.
-- `session.env` keys (e.g. `ELEVENLABS_API_KEY`) are given to every session's environment. Only put keys there that
+- The ElevenLabs key (Settings › Narration or `mortiflix voice elevenlabs`) is stored in `secrets.json` too, and
+  given to a session only while ElevenLabs is the narration engine.
+- `session.env` keys are given to every session's environment. Only put keys there that
   sessions need, and prefer keys with spending limits.
 
 ## The web server

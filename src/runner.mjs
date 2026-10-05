@@ -3,7 +3,8 @@
 import { EventEmitter } from 'node:events';
 import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { paths, loadConfig, readSessionEnv } from './studio.mjs';
+import { REPO, paths, loadConfig, readSessionEnv } from './studio.mjs';
+import { sessionVoiceEnv } from './voice/index.mjs';
 import { listProjects, loadProject, projectPaths, projectPipeline, update, event, readEvents, now } from './projects.mjs';
 import { settle } from './gates.mjs';
 import { prepareWorkdir, writeTorch, sessionReason } from './torch.mjs';
@@ -122,7 +123,8 @@ export class Runner extends EventEmitter {
       prepareWorkdir(root, projectId);
       mkdirSync(join(paths(root).run, 'shared'), { recursive: true });
       writeTorch(root, projectId, { backend: config.backend, reason });
-      const sessionEnv = readSessionEnv(root);
+      // Keys and settings for the session: session.env, then the studio's voice (its key only if it narrates with it).
+      const sessionEnv = { ...readSessionEnv(root), ...sessionVoiceEnv(root), MFX_HOME: REPO };
       bridge = await openBridge({ root, projectId, sessionId, workdir: pp.work, renders: this.renders, sessionEnv });
       this.addActivity(projectId, { kind: 'info', text: `Session started (${config.backend}). ${reason}` });
       result = await backend.run({

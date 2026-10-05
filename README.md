@@ -95,10 +95,25 @@ Pick one with `mortiflix init --backend …`, `mortiflix config backend …`, or
 | `social-short` | brief → hook frames → final | 15–45 s vertical shorts: hook first, works with sound off |
 | `logo-sting` | directions → final | a 3–8 s logo animation; the quickest real run |
 
-They build in [Remotion](https://www.remotion.dev/) (React video), check every render with ffmpeg (`qc.mjs`: format,
-black or frozen frames, loudness, a frame sheet Claude has to look at), and narrate through ElevenLabs when you put
-a key in the studio's `session.env`. Remotion has its own license: free for individuals and small teams, a company
+They build in [Remotion](https://www.remotion.dev/) (React video) and check every render with ffmpeg (`qc.mjs`:
+format, black or frozen frames, loudness, a frame sheet Claude has to look at). Remotion has its own license: free for individuals and small teams, a company
 license above that. Check it for your case.
+
+## Narration
+
+Pick a voice in **Settings › Narration** (or `mortiflix voice`):
+
+- **ElevenLabs**: connect your key and choose from your voices, the default voices or the Voice Library, with
+  Eleven v4 by default and every option the API offers (models, stability and similarity, language, text
+  normalization, pronunciation dictionaries, audio format, data-residency servers), plus sound effects and music
+  beds. Settings shows your plan, credits, and whether you may use the audio commercially (the free plan doesn't).
+- **This computer**: Qwen3-TTS (open, Apache-2.0) through ComfyUI on your graphics card: free and private. Mortiflix
+  checks your GPU and offers it when it fits (4 GB for the 0.6B voice, 8 GB for the 1.7B voice with delivery
+  instructions).
+- **None**: on-screen text and music.
+
+Every line is checked by speech to text and retaken if words go missing; word timings drive the animation.
+Details: [docs/VOICE.md](docs/VOICE.md).
 
 ## Make your own pipeline
 
@@ -120,6 +135,7 @@ makes it, it can be a pipeline.
 - [harness/GATES.md](harness/GATES.md): the protocol every session follows
 - [docs/SECURITY.md](docs/SECURITY.md): what a session can and can't reach, and the web server's guards
 - [docs/COMPUTE.md](docs/COMPUTE.md): where the tokens, time and disk go, measured on a real project
+- [docs/VOICE.md](docs/VOICE.md): narration with ElevenLabs or on your own GPU, and every option
 
 ## Where it came from
 

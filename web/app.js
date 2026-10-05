@@ -40,7 +40,7 @@ async function api(path, { method = 'GET', body, raw } = {}) {
 
 function toast(text, bad = false) {
   const t = h('div', { class: `toast${bad ? ' bad' : ''}`, role: 'status' }, text);
-  document.body.append(t);
+  document.add(body, t);
   setTimeout(() => t.remove(), bad ? 6000 : 2600);
 }
 
@@ -93,6 +93,11 @@ async function render() {
 // replaceChildren() would print null as "null": skipped sections are dropped here.
 function fill(el, ...kids) {
   el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
+}
+
+// append() would print null as "null" too.
+function add(el, ...kids) {
+  el.append(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false));
 }
 
 function mount(...kids) {
@@ -287,7 +292,7 @@ function appendLog(log, a, scroll = true) {
   const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   const t = new Date(a.t).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const mark = { text: '│', tool: '›', error: '!', info: '●' }[a.kind] || ' ';
-  log.append(h('div', { class: 'l' }, h('span', { class: 't' }, t), h('span', { class: 'k' }, mark), h('span', { class: a.kind }, a.text)));
+  add(log, h('div', { class: 'l' }, h('span', { class: 't' }, t), h('span', { class: 'k' }, mark), h('span', { class: a.kind }, a.text)));
   if (log.children.length > 400) log.firstChild.remove();
   if (scroll && atEnd) log.scrollTop = log.scrollHeight;
 }
@@ -316,7 +321,7 @@ function choiceChips(choices, selected, onPick) {
       b.classList.add('on'); b.setAttribute('aria-checked', 'true');
       onPick(c);
     } }, c);
-    wrap.append(b);
+    add(wrap, b);
   }
   return wrap;
 }
@@ -384,7 +389,7 @@ async function reviewView(id, stepKey, versionParam) {
       if (editable) {
         tools.append(
           h('button', { class: 'btn', onclick: () => addNote({ item: sel, time_sec: Math.round(video.currentTime * 100) / 100 }) }, 'Note at this moment'),
-          h('button', { class: 'btn', onclick: () => { video.pause(); pinMode = !pinMode; stage.append(catcher); if (!pinMode) catcher.remove(); } }, 'Pin a spot in this frame'));
+          h('button', { class: 'btn', onclick: () => { video.pause(); pinMode = !pinMode; add(stage, catcher); if (!pinMode) catcher.remove(); } }, 'Pin a spot in this frame'));
       }
     } else if (it.kind === 'audio') {
       const audio = h('audio', { src: url, controls: true, style: { width: '100%' } });
@@ -612,10 +617,12 @@ async function settingsView() {
 
   const decideCheck = (cid, approve) => async () => { try { await api(`/api/checks/${cid}`, { method: 'POST', body: { approve } }); settingsView(); } catch (e) { toast(e.message, true); } };
 
-  body.append(
+  const voiceBlock = await voiceSection();
+  add(body, 
     h('section', null, h('h2', null, 'Who makes the videos'), h('ul', { class: 'rows' }, backendRows), extra,
       field('Session limit', h('input', { type: 'number', min: 5, max: 1440, value: c.maxSessionMinutes, oninput: (e) => { c.maxSessionMinutes = e.target.value; }, style: { maxWidth: '120px' } }), 'Minutes before a session is stopped (the next one picks up from its handoff).'),
       h('div', { class: 'form-end' }, msg, save)),
+    voiceBlock,
     h('section', null, h('h2', null, 'The error checklist', h('span', { class: 'count' }, checks.proposed.length ? `${checks.proposed.length} proposed` : '')),
       h('p', { class: 'meta' }, 'When you point out a real mistake, the session proposes a check so it never reaches you again. Approved checks run on every future video.'),
       checks.proposed.length ? h('ul', { class: 'rows' }, checks.proposed.map((k) => h('li', { class: 'row' }, icon('in_review'),
@@ -623,12 +630,203 @@ async function settingsView() {
         h('div', { class: 'end' }, h('button', { class: 'btn', onclick: decideCheck(k.id, true) }, 'Add'), h('button', { class: 'btn link', onclick: decideCheck(k.id, false) }, 'Dismiss'))))) : null,
       checks.active.length ? h('ul', { class: 'rows' }, checks.active.map((k) => h('li', { class: 'row' }, icon('done'), h('div', { class: 'main' }, h('span', { class: 'title' }, k.title)), h('div', { class: 'end' }, (k.applies_to || []).join(', '))))) : h('p', { class: 'meta' }, 'No studio checks yet (each pipeline has its own).')),
     h('section', null, h('h2', null, 'Keys for sessions'),
-      h('p', null, studio.session_env ? 'session.env is set: its keys are handed to every session.' : 'Optional. To give sessions keys (for example ELEVENLABS_API_KEY for narration), put KEY=value lines in session.env in the studio folder.'),
+      h('p', null, studio.session_env ? 'session.env is set: its keys are handed to every session.' : 'Optional. To give sessions other keys, put KEY=value lines in session.env in the studio folder. (Narration keys belong in Narration above.)'),
       h('p', { class: 'meta' }, `Studio folder: ${studio.root}`)),
   );
   mount(h('div', { class: 'head' }, h('h1', null, 'Settings')), body);
   draw();
 }
+
+// ---------- narration (Settings › Voice) ----------
+
+const ENGINE_LABELS = {
+  elevenlabs: ['ElevenLabs', 'The most natural voices, 90+ languages, your own voice clones. Paid per character (their free plan is non-commercial).'],
+  qwen: ['This computer (Qwen3-TTS)', 'Open model on your graphics card through ComfyUI: free, private, nothing leaves the machine.'],
+  none: ['No narration', 'Videos carry their story with on-screen text, music and sound.'],
+};
+
+async function voiceSection() {
+  let v = await api('/api/voice');
+  const wrap = h('section', { id: 'voice' });
+  const msg = h('span', { class: 'okmsg' });
+  const save = async (patch, note = 'Saved') => {
+    try { v = await api('/api/voice', { method: 'PUT', body: patch }); msg.textContent = note; setTimeout(() => { msg.textContent = ''; }, 1800); }
+    catch (e) { toast(e.message, true); }
+  };
+  const field = (label, control, help) => h('div', { class: 'field' }, h('label', null, label), h('div', null, control, help ? h('div', { class: 'help' }, help) : null));
+
+  async function draw() {
+    const chip = (name) => {
+      if (name === 'elevenlabs') return h('span', { class: `chip ${v.elevenlabs_key ? 'ok' : ''}` }, v.elevenlabs_key ? 'key saved' : 'needs a key');
+      if (name === 'qwen') return h('span', { class: `chip ${v.local.fits ? 'ok' : 'warn'}` }, v.local.fits ? `${v.local.gpu.name.replace(/^NVIDIA (GeForce )?/, '')} · ${v.local.gpu.vram_gb} GB fits` : 'no suitable GPU found');
+      return null;
+    };
+    const rows = h('ul', { class: 'rows' }, Object.entries(ENGINE_LABELS).map(([name, [title, about]]) => h('li', { class: 'row', style: { cursor: 'pointer' }, onclick: async () => { if (v.engine !== name) { await save({ engine: name }); draw(); } } },
+      h('input', { type: 'radio', name: 'voice-engine', checked: v.engine === name, 'aria-label': title }),
+      h('div', { class: 'main' }, h('span', { class: 'title' }, title), h('div', { class: 'meta', style: { whiteSpace: 'normal' } }, about)),
+      h('div', { class: 'end' }, chip(name)))));
+    const panel = h('div');
+    fill(wrap, h('h2', null, 'Narration', msg), rows, panel);
+    if (v.engine === 'elevenlabs') await elevenPanel(panel);
+    else if (v.engine === 'qwen') await qwenPanel(panel);
+    else fill(panel, h('p', { class: 'meta', style: { padding: '12px 0' } }, v.local.fits
+      ? `Want a voice? ${v.local.reason} Pick "This computer" to narrate for free, or ElevenLabs for the most natural voices.`
+      : 'Want a voice? Pick ElevenLabs above (a key from elevenlabs.io).'));
+  }
+
+  // ---- ElevenLabs ----
+  async function elevenPanel(panel) {
+    const e = v.elevenlabs;
+    const keyInput = h('input', { type: 'password', autocomplete: 'off', placeholder: v.elevenlabs_key === 'saved' ? 'Saved (type to replace)' : v.elevenlabs_key ? 'Using ELEVENLABS_API_KEY' : 'xi-… from elevenlabs.io › Developers › API keys' });
+    const account = h('div', { class: 'help' });
+    const accountRow = field('API key', h('div', null, h('div', { class: 'actions' }, keyInput, h('button', { class: 'btn', onclick: async () => {
+      if (keyInput.value.trim()) await save({ elevenlabs_key: keyInput.value.trim() }, 'Key saved');
+      keyInput.value = '';
+      draw();
+    } }, 'Connect')), account), 'Kept only in the studio folder (secrets.json). Sessions get it only while ElevenLabs is the narration engine.');
+    fill(panel, accountRow);
+    if (!v.elevenlabs_key) return;
+
+    let acct = null;
+    try {
+      acct = await api('/api/voice/elevenlabs/account');
+      fill(account,
+        h('span', { class: 'chip ok' }, `${acct.tier} plan`), ' ',
+        `${acct.characters_left.toLocaleString()} of ${acct.character_limit.toLocaleString()} credits left`,
+        acct.resets_at ? ` · resets ${new Date(acct.resets_at).toLocaleDateString()}` : '', ' ',
+        acct.commercial_use ? h('span', { class: 'chip ok' }, 'commercial use') : h('span', { class: 'chip bad' }, 'free plan: non-commercial, credit ElevenLabs'),
+        acct.concurrency ? ` · ${acct.concurrency} lines at once` : '');
+    } catch (err) { fill(account, h('span', { class: 'err' }, err.message)); return; }
+
+    const models = await api('/api/voice/elevenlabs/models').catch(() => []);
+    const model = models.find((m) => m.id === e.model_id) || { id: e.model_id, can_use_style: !/^eleven_v4/.test(e.model_id), can_use_speaker_boost: !/^eleven_v4/.test(e.model_id) };
+    const v4 = /^eleven_v4/.test(e.model_id);
+
+    // The voice: current choice, then a picker (my voices / Voice Library) with previews.
+    const picker = h('div');
+    const current = h('div', { class: 'actions' }, h('span', { class: 'title' }, e.voice_name || 'No voice chosen yet'),
+      h('button', { class: 'btn', onclick: () => openPicker('mine') }, 'Choose a voice'),
+      h('button', { class: 'btn link', onclick: () => openPicker('library') }, 'Browse the Voice Library'));
+    const play = (url) => { const a = new Audio(url); a.play().catch(() => toast('Could not play the preview', true)); };
+    async function openPicker(where, search = '') {
+      const input = h('input', { type: 'text', placeholder: where === 'mine' ? 'Search your voices (name, accent, use…)' : 'Search the Voice Library (e.g. "warm narrator", "British")', value: search });
+      const list = h('ul', { class: 'rows' }, h('li', { class: 'meta' }, 'Loading…'));
+      input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') openPicker(where, input.value); });
+      fill(picker, h('div', { class: 'actions', style: { margin: '10px 0' } }, input, h('button', { class: 'btn', onclick: () => openPicker(where, input.value) }, 'Search'),
+        h('button', { class: 'btn link', onclick: () => openPicker(where === 'mine' ? 'library' : 'mine', input.value) }, where === 'mine' ? 'Voice Library instead' : 'My voices instead'),
+        h('button', { class: 'btn link', onclick: () => fill(picker) }, 'Close')), list);
+      try {
+        const r = where === 'mine'
+          ? await api(`/api/voice/elevenlabs/voices?search=${encodeURIComponent(search)}`)
+          : await api(`/api/voice/elevenlabs/library?search=${encodeURIComponent(search)}`);
+        fill(list, r.voices.length ? r.voices.map((x) => h('li', { class: 'row' },
+          x.preview_url ? h('button', { class: 'btn link', 'aria-label': `Play ${x.name}`, onclick: () => play(`/api/voice/elevenlabs/preview?url=${encodeURIComponent(x.preview_url)}`) }, '▶') : h('span'),
+          h('div', { class: 'main' }, h('span', { class: 'title' }, x.name),
+            h('div', { class: 'meta', style: { whiteSpace: 'normal' } }, Object.values(x.labels || {}).filter(Boolean).join(' · ') || x.category || '', where === 'library' && x.free_users_allowed === false ? ' · paid plans only' : '')),
+          h('div', { class: 'end' }, h('button', { class: 'btn', onclick: async () => {
+            try {
+              let id = x.id;
+              if (where === 'library') id = (await api('/api/voice/elevenlabs/library/add', { method: 'POST', body: { owner: x.owner, voice_id: x.id, name: x.name } })).id;
+              await save({ elevenlabs: { voice_id: id, voice_name: x.name } }, `${x.name} chosen`);
+              draw();
+            } catch (err) { toast(err.message, true); }
+          } }, where === 'library' ? 'Add & use' : 'Use')))) : h('li', { class: 'meta' }, 'No voices match.'));
+      } catch (err) { fill(list, h('li', { class: 'err' }, err.message)); }
+    }
+
+    const slider = (key, label, lo, hi, step, help) => {
+      const out = h('span', { class: 'meta' }, String(e[key]));
+      return field(label, h('div', { class: 'actions' }, h('input', { type: 'range', min: lo, max: hi, step, value: e[key], style: { width: '220px' },
+        oninput: (ev) => { out.textContent = ev.target.value; }, onchange: (ev) => save({ elevenlabs: { [key]: Number(ev.target.value) } }) }), out), help);
+    };
+    const select = (key, options, help, label) => field(label, h('select', { style: { maxWidth: '320px' }, onchange: (ev) => save({ elevenlabs: { [key]: ev.target.value } }) },
+      options.map((o) => h('option', { value: o.value, selected: String(e[key] ?? '') === String(o.value), disabled: o.disabled }, o.label))), help);
+
+    const dicts = await api('/api/voice/elevenlabs/dictionaries').catch(() => []);
+    const chosenDicts = new Set((e.pronunciation_dictionaries || []).map((d) => d.id));
+    const sampleText = h('textarea', { style: { minHeight: '60px' } }, v4 ? '[warm] Every city has a heartbeat. Ours runs on bikes.' : 'Every city has a heartbeat. Ours runs on bikes.');
+    const player = h('div');
+
+    fill(panel, accountRow,
+      field('Voice', h('div', null, current, picker), 'Your voices, the default voices and any you add from the Voice Library. ▶ plays the voice\'s own preview (free).'),
+      field('Model', choiceChips(models.map((m) => m.id), e.model_id, (id) => save({ elevenlabs: { model_id: id } }).then(draw)),
+        models.length ? `${models.find((m) => m.id === e.model_id)?.name || e.model_id}: ${models.find((m) => m.id === e.model_id)?.languages || '?'} languages, up to ${(models.find((m) => m.id === e.model_id)?.max_characters || 0).toLocaleString()} characters a line. eleven_v4 is ElevenLabs' newest and recommended for narration.` : null),
+      slider('stability', 'Stability', 0, 1, 0.05, 'Lower: more expressive and varied. Higher: steadier. Promos 0.4–0.5, long narration 0.55–0.65.'),
+      slider('similarity_boost', 'Similarity', 0, 1, 0.05, 'How closely it sticks to the original voice. Raise it if a clone drifts.'),
+      v4 ? field('Direction', h('div', { class: 'meta', style: { whiteSpace: 'normal' } }, 'Eleven v4 is directed in the script itself: audio tags like [warm] or [whispers], CAPITALS for emphasis, ellipses for pauses, and "/IPA/" for names. It has no style or speed settings and ignores SSML.')) : null,
+      !v4 && model.can_use_style ? slider('style', 'Style', 0, 1, 0.05, 'Exaggerates the voice\'s style. Above 0 can cost stability and speed.') : null,
+      !v4 ? slider('speed', 'Speed', 0.7, 1.2, 0.05, '1.0 is the voice\'s natural pace.') : null,
+      !v4 && model.can_use_speaker_boost ? field('Speaker boost', h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: e.use_speaker_boost, onchange: (ev) => save({ elevenlabs: { use_speaker_boost: ev.target.checked } }) }), 'Closer to the original speaker (slightly slower)')) : null,
+      field('Language', h('input', { type: 'text', style: { maxWidth: '140px' }, placeholder: 'auto', value: e.language_code || '', onchange: (ev) => save({ elevenlabs: { language_code: ev.target.value.trim().toLowerCase() } }) }), 'Optional ISO 639-1 code (en, es, de…) to force a language and its number reading. Blank: detected from the text.'),
+      select('apply_text_normalization', [{ value: 'auto', label: 'Auto' }, { value: 'on', label: 'Always spell out numbers, dates…' }, { value: 'off', label: 'Off (read exactly as written)' }], 'How numbers, dates and abbreviations are read. Writing them out in the script is the most reliable.', 'Text normalization'),
+      dicts.length ? field('Pronunciation', h('div', null, dicts.map((d) => h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: chosenDicts.has(d.id), onchange: (ev) => {
+        const next = [...(e.pronunciation_dictionaries || []).filter((x) => x.id !== d.id), ...(ev.target.checked ? [{ id: d.id, version_id: d.version_id, name: d.name }] : [])].slice(0, 3);
+        save({ elevenlabs: { pronunciation_dictionaries: next } });
+      } }), d.name))), 'Up to 3 of your pronunciation dictionaries, applied in order. Phoneme rules work on v4, v3 and Flash v2; other models use alias rules only.') : null,
+      select('output_format', v.output_formats.map((f) => ({ value: f.id, label: `${f.label}${f.tier ? ` (${f.tier} plan or above)` : ''}`, disabled: f.tier && !tierOk(acct.tier, f.tier) })), 'What each line is saved as. MP3 128 kbps is plenty for narration under music.', 'Audio format'),
+      select('server', v.servers.map((x) => ({ value: x, label: { default: 'Default (global)', us: 'United States', eu: 'EU data residency', in: 'India data residency', sg: 'Singapore data residency' }[x] })), 'Only change this if your account lives on a data-residency server.', 'Server'),
+      select('check_model', [{ value: 'scribe_v2', label: 'Check every line with Scribe v2 (recommended)' }, { value: 'off', label: 'Don\'t check' }], 'Speech to text listens to every take, retakes lines with missing words, and gives the animation exact word timings. Costs a little extra.', 'Checks'),
+      field('Also use for', h('div', null,
+        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: e.sfx, onchange: (ev) => save({ elevenlabs: { sfx: ev.target.checked } }) }), 'Sound effects (whooshes, hits, ambience: up to 30 s, loopable)'),
+        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: e.music, onchange: (ev) => save({ elevenlabs: { music: ev.target.checked } }) }), 'Music beds (Eleven Music: instrumental, 3 s to 10 min)')),
+        h('span', null, 'Music usage terms depend on your plan: ', h('a', { href: 'https://elevenlabs.io/music-terms', target: '_blank', rel: 'noopener' }, 'elevenlabs.io/music-terms'))),
+      field('Try it', h('div', null, sampleText, h('div', { class: 'actions', style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: () => trySample('elevenlabs', sampleText.value, player) }, 'Speak this line'), h('span', { class: 'meta' }, 'uses about one credit per character')), player)),
+      h('p', { class: 'meta', style: { padding: '10px 0' } }, 'Zero-retention mode (no logs at ElevenLabs) is for Enterprise accounts only, so it isn\'t offered here. Voice clones: only of your own voice or with the speaker\'s consent.'),
+    );
+  }
+
+  // ---- Qwen3-TTS through ComfyUI ----
+  async function qwenPanel(panel) {
+    const qc = v.qwen;
+    const status = h('div', { class: 'help' }, 'Checking ComfyUI…');
+    const url = h('input', { type: 'text', value: qc.url, style: { maxWidth: '280px' } });
+    const gpuLine = h('p', { class: 'meta', style: { padding: '8px 0', whiteSpace: 'normal' } }, v.local.reason);
+    fill(panel, gpuLine, field('ComfyUI', h('div', null, h('div', { class: 'actions' }, url, h('button', { class: 'btn', onclick: async () => { await save({ qwen: { url: url.value.trim() } }); draw(); } }, 'Check')), status)));
+    let st;
+    try { st = await api(`/api/voice/qwen/status?url=${encodeURIComponent(qc.url)}`); } catch (err) { st = { ok: false, reason: err.message }; }
+    if (!st.ok) {
+      fill(status, h('span', { class: 'err' }, st.reason));
+      add(panel, h('div', { class: 'field' }, h('label', null, 'Set it up'), h('ol', { style: { margin: 0, paddingLeft: '18px' } },
+        st.step !== 'suite' ? h('li', null, 'Install ComfyUI and start it (', h('a', { href: 'https://www.comfy.org/download', target: '_blank', rel: 'noopener' }, 'comfy.org/download'), '). It listens on http://127.0.0.1:8188 by default.') : null,
+        h('li', null, 'In ComfyUI Manager, install "TTS Audio Suite" (or clone ', h('a', { href: 'https://github.com/diodiogod/TTS-Audio-Suite', target: '_blank', rel: 'noopener' }, 'diodiogod/TTS-Audio-Suite'), ' into custom_nodes and run its install.py).'),
+        h('li', null, 'Restart ComfyUI, then press Check. The Qwen3-TTS models (Apache-2.0) download from Hugging Face on first use: about 4 GB for 1.7B.'))));
+      return;
+    }
+    fill(status, h('span', { class: 'chip ok' }, 'ready'), ` ComfyUI ${st.comfyui || ''} · TTS Audio Suite · ${st.gpu || 'GPU'}${st.vram_free_gb !== null ? ` · ${st.vram_free_gb} GB free now` : ''}`, st.can_listen ? '' : ' · (this suite version has no Qwen3-ASR: lines won\'t be checked)');
+    const custom = st.models.filter((m) => /CustomVoice/.test(m));
+    const pickModel = (m) => (/1\.7B/.test(m) ? 'CustomVoice 1.7B' : 'CustomVoice 0.6B');
+    const sampleText = h('textarea', { style: { minHeight: '60px' } }, 'Every city has a heartbeat. Ours runs on bikes.');
+    const player = h('div');
+    const is17 = /1\.7B/.test(qc.model);
+    add(panel, 
+      field('Model', choiceChips(custom.map(pickModel), qc.model, (m) => save({ qwen: { model: m } }).then(draw)), is17 ? 'Takes a delivery instruction. Needs about 6.5 GB of free GPU memory while it speaks.' : 'Preset voices only, no delivery instruction. About half the memory of 1.7B.'),
+      field('Voice', h('select', { style: { maxWidth: '100%' }, onchange: (ev) => save({ qwen: { voice: ev.target.value } }) },
+        st.voices.map((name) => { const p = v.presets.find((x) => x.id === name); return h('option', { value: name, selected: qc.voice === name }, p ? `${name} · ${p.language} · ${p.about}` : name); })),
+        'Built into the model (no cloning, no consent question). Each speaks all 10 languages; the listed one is its native language.'),
+      field('Language', h('select', { style: { maxWidth: '200px' }, onchange: (ev) => save({ qwen: { language: ev.target.value } }) }, st.languages.map((l) => h('option', { value: l, selected: qc.language === l }, l)))),
+      is17 ? field('Delivery', h('textarea', { style: { minHeight: '60px' }, onchange: (ev) => save({ qwen: { instruct: ev.target.value } }) }, qc.instruct), 'How it should sound, in plain words: pace, warmth, energy. Inline tags like [warm] are not read.') : null,
+      st.runtime_modes.length ? field('Runtime', h('select', { style: { maxWidth: '240px' }, onchange: (ev) => save({ qwen: { runtime_mode: ev.target.value } }) }, st.runtime_modes.map((m) => h('option', { value: m, selected: qc.runtime_mode === m }, m))), 'The suite\'s own setting. Try Main Environment first; if ComfyUI reports a transformers version error, choose its Shared Runtime.') : null,
+      field('Checks', h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: qc.check, disabled: !st.can_listen, onchange: (ev) => save({ qwen: { check: ev.target.checked } }) }), 'Listen back to every line with Qwen3-ASR (retakes misread lines, gives word timings)')),
+      field('Try it', h('div', null, sampleText, h('div', { class: 'actions', style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: () => trySample('qwen', sampleText.value, player) }, 'Speak this line'), h('span', { class: 'meta' }, 'the first run downloads the model')), player)),
+    );
+  }
+
+  async function trySample(engine, text, player) {
+    fill(player, h('span', { class: 'meta' }, 'Speaking…'));
+    try {
+      const res = await fetch('/api/voice/sample', { method: 'POST', headers: { 'x-mortiflix': '1', 'content-type': 'application/json' }, body: JSON.stringify({ engine, text }) });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+      fill(player, h('audio', { src: url, controls: true, autoplay: true, style: { width: '100%', marginTop: '8px' } }));
+    } catch (err) { fill(player, h('span', { class: 'err' }, err.message)); }
+  }
+
+  await draw();
+  return wrap;
+}
+
+const TIERS = ['free', 'starter', 'creator', 'pro', 'scale', 'business', 'enterprise'];
+const tierOk = (tier, need) => TIERS.indexOf(String(tier || 'free').replace(/_.*/, '')) >= TIERS.indexOf(need);
 
 // ---------- start ----------
 

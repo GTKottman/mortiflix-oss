@@ -8,6 +8,7 @@ import { listPipelines, findPipeline } from './pipelines.mjs';
 import { createProject, addIntakeFile, startProject, listProjects, loadProject, projectPaths, projectPipeline, readEvents } from './projects.mjs';
 import * as gates from './gates.mjs';
 import { Runner, BACKENDS } from './runner.mjs';
+import * as voice from './voice/index.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -31,6 +32,13 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
 
   ${C.b('The web studio')}
   mortiflix serve [--port 4646] [--host 127.0.0.1]             the studio in your browser, with the runner
+
+  ${C.b('Narration')}
+  mortiflix voice                                              what narrates your videos, and what this machine can run
+  mortiflix voice elevenlabs                                   set up ElevenLabs (key, voice, model)
+  mortiflix voice local                                        set up Qwen3-TTS on your GPU through ComfyUI
+  mortiflix voice none                                         no narration (on-screen text and music)
+  mortiflix voice test ["a line to speak"]                     hear the current voice
 
   ${C.b('Settings')}
   mortiflix config [key [value]]                               show or change settings
@@ -73,6 +81,7 @@ export async function run(argv = process.argv.slice(2)) {
       case 'serve': return serve(root, a);
       case 'config': return config(root, rest);
       case 'checks': return checks(root, rest);
+      case 'voice': return voiceCmd(root, rest);
       case undefined: case 'help': return console.log(HELP);
       default: throw new Error(`unknown command "${cmd}" (mortiflix help)`);
     }
@@ -140,6 +149,7 @@ function init(root, a) {
   console.log(`${C.green('✔')} Studio ready at ${C.b(root)}`);
   console.log(`  Backend: ${C.b(backend)} ${C.dim(BACKENDS[backend].available(loadConfig(root), root).detail)}`);
   if (backend === 'demo') console.log(C.dim('  (No Claude Code login or API key found: the demo backend makes placeholder work. Install Claude Code, or `mortiflix config api-key`.)'));
+  console.log(`\n  ${C.b('Narration')} (optional): ${voiceOffer()}`);
   console.log(`\n  Next: ${C.b('mortiflix demo')} for a free walk-through, or ${C.b('mortiflix serve')} to open the studio in your browser.`);
 }
 
@@ -411,6 +421,102 @@ function checks(root, [action, id]) {
   console.log(C.b('\nYour checklist (on top of each pipeline\'s own):'));
   for (const c of all.active) console.log(`  ${c.id}  ${c.title}`);
   if (!all.active.length) console.log(C.dim('  none yet'));
+}
+
+// The narration offer: ElevenLabs always; the local voice when this machine's graphics card can run it.
+function voiceOffer() {
+  const rec = voice.qwen.recommend(voice.qwen.detectGpus());
+  const eleven = `${C.b('mortiflix voice elevenlabs')} for ElevenLabs voices (a key from elevenlabs.io)`;
+  return rec.fits ? `${eleven}, or ${C.b('mortiflix voice local')}: ${rec.reason} Free and private, through ComfyUI.` : `${eleven}.`;
+}
+
+async function voiceCmd(root, [sub, ...words]) {
+  needStudio(root);
+  const v = voice.voiceConfig(root);
+  if (!sub) {
+    const o = voice.voiceOverview(root);
+    console.log(`Narration: ${C.b({ none: 'none', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer' }[o.engine])}`);
+    if (o.engine === 'elevenlabs') console.log(`  voice ${o.elevenlabs.voice_name || C.red('not chosen')} · model ${o.elevenlabs.model_id} · key ${o.elevenlabs_key || C.red('missing')}`);
+    if (o.engine === 'qwen') console.log(`  ${o.qwen.voice} · ${o.qwen.model} · ${o.qwen.language} · ComfyUI ${o.qwen.url}`);
+    console.log(`\nThis machine: ${o.gpus.length ? o.gpus.map((g) => `${g.name} (${g.vram_gb} GB)`).join(', ') : 'no NVIDIA GPU found'}`);
+    console.log(`  ${o.local.reason}`);
+    console.log(`\nOptions: ${voiceOffer()}`);
+    return;
+  }
+  if (sub === 'none') { voice.saveVoice(root, { engine: 'none' }); return console.log('Narration off: videos use on-screen text, music and sound.'); }
+  if (sub === 'test') return voiceTest(root, words.join(' '));
+  const rl = prompter();
+  try {
+    if (sub === 'elevenlabs') {
+      if (!voice.elevenKey(root)) {
+        rl.close();
+        const key = (await hiddenPrompt('ElevenLabs API key (elevenlabs.io › Developers › API keys): ')).trim();
+        if (!key) throw new Error('no key given');
+        voice.setElevenKey(root, key);
+        return voiceCmd(root, ['elevenlabs']);
+      }
+      const el = new voice.eleven.ElevenLabs({ key: voice.elevenKey(root), server: v.elevenlabs.server });
+      const a = await el.account();
+      voice.saveVoice(root, { engine: 'elevenlabs', elevenlabs: { tier: a.tier } });
+      console.log(`${C.green('✔')} ${a.tier} plan · ${a.characters_left.toLocaleString()} credits left${a.commercial_use ? ' · commercial use' : C.red(' · free plan: non-commercial, credit ElevenLabs')}`);
+      const search = (await rl.question(`Find a voice (e.g. "warm narrator", blank for all)${v.elevenlabs.voice_name ? C.dim(` [keep ${v.elevenlabs.voice_name}]`) : ''}: `)).trim();
+      if (search || !v.elevenlabs.voice_id) {
+        let { voices: list } = await el.voices({ search, page_size: 15 });
+        let fromLibrary = false;
+        if (!list.length) { list = (await el.library({ search, page_size: 15 })).voices; fromLibrary = true; }
+        if (!list.length) throw new Error('no voices match');
+        list.forEach((x, i) => console.log(`  ${String(i + 1).padStart(2)}. ${C.b(x.name)} ${C.dim(Object.values(x.labels || {}).filter(Boolean).join(' · '))}${fromLibrary ? C.dim(' (Voice Library)') : ''}`));
+        const pick = list[Number((await rl.question('Number: ')).trim()) - 1];
+        if (!pick) throw new Error('no voice picked');
+        const id = fromLibrary ? (await el.addFromLibrary(pick.owner, pick.id, pick.name)).id : pick.id;
+        voice.saveVoice(root, { elevenlabs: { voice_id: id, voice_name: pick.name } });
+      }
+      const models = await el.models();
+      console.log(`Model: ${models.map((m, i) => `${i + 1}. ${m.id}${m.recommended ? C.dim(' (recommended)') : ''}`).join('  ')}`);
+      const m = models[Number((await rl.question(`Number ${C.dim(`[${v.elevenlabs.model_id}]`)}: `)).trim()) - 1];
+      if (m) voice.saveVoice(root, { elevenlabs: { model_id: m.id } });
+      const now = voice.voiceConfig(root).elevenlabs;
+      console.log(`${C.green('✔')} ElevenLabs: ${now.voice_name} on ${now.model_id}. Every other option (stability, format, dictionaries, sound effects, music) is in the web studio's Settings.`);
+      console.log(`  Hear it: ${C.b('mortiflix voice test')}`);
+      return;
+    }
+    if (sub === 'local') {
+      const rec = voice.qwen.recommend(voice.qwen.detectGpus());
+      console.log(rec.fits ? `${C.green('✔')} ${rec.reason}` : C.red(rec.reason));
+      const url = (await rl.question(`ComfyUI address ${C.dim(`[${v.qwen.url}]`)}: `)).trim() || v.qwen.url;
+      const st = await new voice.qwen.ComfyUI({ url }).status();
+      if (!st.ok) {
+        console.log(C.red(st.reason));
+        console.log('  1. Install ComfyUI: https://www.comfy.org/download (it listens on http://127.0.0.1:8188)');
+        console.log('  2. In ComfyUI Manager install "TTS Audio Suite" (github.com/diodiogod/TTS-Audio-Suite), restart ComfyUI');
+        console.log(`  3. Run ${C.b('mortiflix voice local')} again. The Qwen3-TTS models (Apache-2.0) download on first use, about 4 GB.`);
+        voice.saveVoice(root, { qwen: { url } });
+        return;
+      }
+      console.log(`${C.green('✔')} ComfyUI ${st.comfyui || ''} with the TTS Audio Suite · ${st.gpu} · ${st.vram_free_gb} GB free`);
+      st.voices.forEach((name, i) => { const p = voice.qwen.PRESETS.find((x) => x.id === name); console.log(`  ${i + 1}. ${C.b(name)} ${C.dim(p ? `${p.language}: ${p.about}` : '')}`); });
+      const name = st.voices[Number((await rl.question(`Voice ${C.dim(`[${v.qwen.voice}]`)}: `)).trim()) - 1] || v.qwen.voice;
+      voice.saveVoice(root, { engine: 'qwen', qwen: { url, voice: name, model: rec.model || v.qwen.model } });
+      console.log(`${C.green('✔')} Local narration: ${name} on Qwen3-TTS ${rec.model || v.qwen.model}. Hear it: ${C.b('mortiflix voice test')}`);
+      return;
+    }
+    throw new Error('mortiflix voice [elevenlabs|local|none|test]');
+  } finally {
+    rl.close();
+  }
+}
+
+async function voiceTest(root, text) {
+  const v = voice.voiceConfig(root);
+  const line = text || 'Every city has a heartbeat. Ours runs on bikes.';
+  let out;
+  if (v.engine === 'elevenlabs') out = { ...(await new voice.eleven.ElevenLabs({ key: voice.elevenKey(root), server: v.elevenlabs.server }).sample(v.elevenlabs, line)), format: 'mp3' };
+  else if (v.engine === 'qwen') out = await new voice.qwen.ComfyUI({ url: v.qwen.url }).sample(v.qwen, line);
+  else throw new Error('no narration engine set up (mortiflix voice elevenlabs | local)');
+  const file = join(paths(root).run, `voice-test.${out.format}`);
+  writeFileSync(file, out.audio);
+  console.log(`${C.green('✔')} ${file}`);
+  if (spawnSync('ffplay', ['-version']).status === 0) spawnSync('ffplay', ['-nodisp', '-autoexit', '-loglevel', 'error', file], { stdio: 'inherit' });
 }
 
 // The walk-through: a logo sting made by the demo backend, so the whole loop can be tried for free.

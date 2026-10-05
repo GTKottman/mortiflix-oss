@@ -103,6 +103,16 @@ returns `{ ok, error?, usage?, cost_usd? }`; `available(config, root)` says whet
 
 Adding a backend is adding a module with those two functions to `BACKENDS` in `runner.mjs`.
 
+## Narration (`src/voice/`)
+
+`voice/index.mjs` holds the studio's choice (`config.json` › `voice`: `none`, `elevenlabs` or `qwen`) and hands a
+session `MFX_VOICE` (the settings) plus `ELEVENLABS_API_KEY` only when ElevenLabs is the engine.
+`voice/elevenlabs.mjs` talks to ElevenLabs for setup (account, models, voices, Voice Library, dictionaries, a test
+line) and builds every text-to-speech request so it carries only what the chosen model takes (Eleven v4: stability and
+similarity only). `voice/qwen.mjs` detects the GPU, reads the installed ComfyUI nodes (models, voices, runtime modes)
+and builds the speak and listen graphs. Sessions narrate with the voiceover skill's `vo.mjs`, which imports these
+modules (`MFX_HOME`), and make effects and music beds with `sound.mjs`. See [VOICE.md](VOICE.md).
+
 ## The web studio (`src/web/server.mjs`, `web/`)
 
 A plain `node:http` server and a no-build vanilla JS app. JSON API under `/api`, live updates over server-sent events

@@ -14,6 +14,7 @@ import { listPipelines } from '../pipelines.mjs';
 import { createProject, addIntakeFile, startProject, listProjects, loadProject, projectPaths, projectPipeline, readEvents, readJournal } from '../projects.mjs';
 import * as gates from '../gates.mjs';
 import { Runner, BACKENDS } from '../runner.mjs';
+import * as voice from '../voice/index.mjs';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -102,6 +103,7 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       if ('api_key' in body) writeSecret(root, 'anthropic_api_key', body.api_key ? String(body.api_key).trim() : null);
       return after(studioInfo(root, runner));
     }
+    if (p.startsWith('/voice')) return voiceApi(root, req, res, url, p, method, after);
     if (p === '/pipelines' && method === 'GET') {
       return send(res, 200, listPipelines(root).map(({ dir, ...x }) => x));
     }
@@ -217,6 +219,75 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
 }
 
 class BadRequest extends Error {}
+
+// Narration setup: the engine, ElevenLabs (account, models, voices, Voice Library, dictionaries, a test line) and
+// local Qwen3-TTS through ComfyUI. Calls to ElevenLabs happen only when the page asks.
+async function voiceApi(root, req, res, url, p, method, after) {
+  const q = (k) => url.searchParams.get(k) || undefined;
+  const client = () => {
+    const key = voice.elevenKey(root);
+    if (!key) throw new BadRequest('connect an ElevenLabs API key first');
+    return new voice.eleven.ElevenLabs({ key, server: voice.voiceConfig(root).elevenlabs.server });
+  };
+  const wrap = async (fn) => {
+    try { return await fn(); } catch (e) {
+      if (e instanceof BadRequest || e instanceof UserError) throw e;
+      throw new BadRequest(e.status === 401 ? 'ElevenLabs refused the key (401): check it, or make a new one at elevenlabs.io › Developers › API keys' : e.message);
+    }
+  };
+  if (p === '/voice' && method === 'GET') return send(res, 200, voice.voiceOverview(root));
+  if (p === '/voice' && method === 'PUT') {
+    const body = await json(req);
+    if ('elevenlabs_key' in body) voice.setElevenKey(root, body.elevenlabs_key);
+    try { voice.saveVoice(root, body); } catch (e) { throw new BadRequest(e.message); }
+    return after(voice.voiceOverview(root));
+  }
+  if (p === '/voice/elevenlabs/account' && method === 'GET') {
+    const account = await wrap(() => client().account());
+    voice.saveVoice(root, { elevenlabs: { tier: account.tier } });
+    return send(res, 200, account);
+  }
+  if (p === '/voice/elevenlabs/models' && method === 'GET') return send(res, 200, await wrap(() => client().models()));
+  if (p === '/voice/elevenlabs/voices' && method === 'GET') return send(res, 200, await wrap(() => client().voices({ search: q('search'), page_token: q('page') })));
+  if (p === '/voice/elevenlabs/library' && method === 'GET') {
+    return send(res, 200, await wrap(() => client().library({ search: q('search'), gender: q('gender'), age: q('age'), accent: q('accent'), language: q('language'), use_cases: q('use_case') ? [q('use_case')] : undefined, page: Number(q('page') || 0) })));
+  }
+  if (p === '/voice/elevenlabs/library/add' && method === 'POST') {
+    const { owner, voice_id: vid, name } = await json(req);
+    return after(await wrap(() => client().addFromLibrary(owner, vid, String(name || 'Mortiflix voice').slice(0, 100))));
+  }
+  if (p === '/voice/elevenlabs/dictionaries' && method === 'GET') return send(res, 200, await wrap(() => client().dictionaries()));
+  if (p === '/voice/elevenlabs/preview' && method === 'GET') {
+    const target = q('url');
+    if (!voice.eleven.previewAllowed(target)) throw new BadRequest('not an ElevenLabs preview');
+    const r = await fetch(target);
+    if (!r.ok) throw new BadRequest(`preview ${r.status}`);
+    res.writeHead(200, { 'content-type': r.headers.get('content-type') || 'audio/mpeg', 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' });
+    return res.end(Buffer.from(await r.arrayBuffer()));
+  }
+  if (p === '/voice/qwen/status' && method === 'GET') {
+    const cfg = voice.voiceConfig(root).qwen;
+    return send(res, 200, await new voice.qwen.ComfyUI({ url: q('url') || cfg.url }).status());
+  }
+  if (p === '/voice/sample' && method === 'POST') {
+    const { engine, text } = await json(req);
+    const line = String(text || '').trim().slice(0, 300) || 'This is how your narration will sound.';
+    const cfg = voice.voiceConfig(root);
+    if (engine === 'elevenlabs') {
+      if (!cfg.elevenlabs.voice_id) throw new BadRequest('choose a voice first');
+      const out = await wrap(() => client().sample(cfg.elevenlabs, line));
+      res.writeHead(200, { 'content-type': 'audio/mpeg', 'x-characters': String(out.characters), 'cache-control': 'no-store' });
+      return res.end(out.audio);
+    }
+    if (engine === 'qwen') {
+      const out = await wrap(() => new voice.qwen.ComfyUI({ url: cfg.qwen.url }).sample(cfg.qwen, line));
+      res.writeHead(200, { 'content-type': out.format === 'wav' ? 'audio/wav' : out.format === 'mp3' ? 'audio/mpeg' : 'audio/flac', 'cache-control': 'no-store' });
+      return res.end(out.audio);
+    }
+    throw new BadRequest('engine must be elevenlabs or qwen');
+  }
+  return send(res, 404, { error: 'not found' });
+}
 
 function send(res, code, body) {
   res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
