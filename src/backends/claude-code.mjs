@@ -38,10 +38,12 @@ export async function run({ root, workdir, prompt, env, transcript, onActivity, 
   signal?.addEventListener('abort', kill, { once: true });
 
   let result = null;
+  let billing = null;   // 'plan' (a Claude subscription login: nothing charged per token) or 'api' (an API key: real spend)
   createInterface({ input: p.stdout }).on('line', (line) => {
     out.write(`${line}\n`);
     let m;
     try { m = JSON.parse(line); } catch { return; }
+    if (m.type === 'system' && m.subtype === 'init' && m.apiKeySource !== undefined) billing = m.apiKeySource === 'none' ? 'plan' : 'api';
     if (m.type === 'assistant') {
       for (const b of m.message?.content || []) {
         if (b.type === 'text' && b.text.trim()) onActivity({ kind: 'text', text: b.text });
@@ -64,9 +66,9 @@ export async function run({ root, workdir, prompt, env, transcript, onActivity, 
   const usage = result?.usage ? { input_tokens: (result.usage.input_tokens || 0) + (result.usage.cache_read_input_tokens || 0) + (result.usage.cache_creation_input_tokens || 0), output_tokens: result.usage.output_tokens || 0 } : null;
   if (signal?.aborted) return { ok: false, error: 'stopped', usage };
   if (code !== 0 || result?.is_error) {
-    return { ok: false, error: (result?.result || stderr || `claude exited with ${code}`).toString().slice(-1000), usage, cost_usd: result?.total_cost_usd };
+    return { ok: false, error: (result?.result || stderr || `claude exited with ${code}`).toString().slice(-1000), usage, cost_usd: result?.total_cost_usd, billing };
   }
-  return { ok: true, usage, cost_usd: result?.total_cost_usd, summary: result?.result };
+  return { ok: true, usage, cost_usd: result?.total_cost_usd, billing, summary: result?.result };
 }
 
 export function describeTool(name, input = {}) {

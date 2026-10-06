@@ -22,6 +22,7 @@
     "web",
     "pipelines",
     "harness",
+    "vendor",
     "docs",
     "README.md",
     "LICENSE"

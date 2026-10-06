@@ -1,0 +1,126 @@
+#version 450
+// Body forces on the faces. n.w = op:
+//  0 buoyancy on w faces            o0 = (U, V, W, density), o1.x = heat, f0 = (dt, buoy_heat, buoy_smoke, 0)
+//  1 vorticity omega + |omega|      o0 = (U, V, W, -), o1.x = tmp (wx, wy, wz, wm, Fx, Fy, Fz consecutive), f0.y = 0.5/dx
+//  2 confinement + noise force      o0 = (-, -, -, density), o1 = (tmp, heat, perm, seed), f0 = (eps*dx, 0.5/dx, tamp, tfreq)
+//                                   f1 = (time*speed, dx, ox, oy), f2.x = oz
+//  3 add cell forces to faces       o0 = (U, V, W, -), o1.x = tmp, f0.x = dt
+//  4 wind relaxation + damping      o0 = (U, V, W, -), f0 = (a, e, -, -), f1 = (wind x, y, z, -)
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+#include "common.glsl"
+
+const vec3 GRAD[16] = vec3[](vec3(1, 1, 0), vec3(-1, 1, 0), vec3(1, -1, 0), vec3(-1, -1, 0), vec3(1, 0, 1),
+                             vec3(-1, 0, 1), vec3(1, 0, -1), vec3(-1, 0, -1), vec3(0, 1, 1), vec3(0, -1, 1),
+                             vec3(0, 1, -1), vec3(0, -1, -1), vec3(1, 1, 0), vec3(-1, 1, 0), vec3(0, -1, 1),
+                             vec3(0, -1, -1));
+uint permv(uint i) { return S[pc.o1.z + (i & 511u)]; }
+vec3 ghash(int x, int y, int z, uint seed) {
+  uint a = permv(uint((x + int(seed * 37u)) & 255));
+  a = permv(a + uint(y & 255));
+  a = permv(a + uint(z & 255));
+  return GRAD[a & 15u];
+}
+// gradient noise derivatives (value unused), as noised() in nova_core.c
+vec3 noised(vec3 x, uint seed) {
+  vec3 i0 = floor(x);
+  ivec3 i = ivec3(i0);
+  vec3 f = x - i0;
+  vec3 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+  vec3 du = 30.0 * f * f * (f * (f - 2.0) + 1.0);
+  vec3 ga = ghash(i.x, i.y, i.z, seed), gb = ghash(i.x + 1, i.y, i.z, seed), gc = ghash(i.x, i.y + 1, i.z, seed),
+       gd = ghash(i.x + 1, i.y + 1, i.z, seed), ge = ghash(i.x, i.y, i.z + 1, seed),
+       gf = ghash(i.x + 1, i.y, i.z + 1, seed), gg = ghash(i.x, i.y + 1, i.z + 1, seed),
+       gh = ghash(i.x + 1, i.y + 1, i.z + 1, seed);
+  float va = dot(ga, f), vb = dot(gb, f - vec3(1, 0, 0)), vc = dot(gc, f - vec3(0, 1, 0)),
+        vd = dot(gd, f - vec3(1, 1, 0)), ve = dot(ge, f - vec3(0, 0, 1)), vf = dot(gf, f - vec3(1, 0, 1)),
+        vg = dot(gg, f - vec3(0, 1, 1)), vh = dot(gh, f - vec3(1, 1, 1));
+  float k1 = vb - va, k2 = vc - va, k3 = ve - va, k4 = va - vb - vc + vd, k5 = va - vc - ve + vg,
+        k6 = va - vb - ve + vf, k7 = -va + vb + vc - vd + ve - vf - vg + vh;
+  vec3 g = ga + u.x * (gb - ga) + u.y * (gc - ga) + u.z * (ge - ga) + u.x * u.y * (ga - gb - gc + gd) +
+           u.y * u.z * (ga - gc - ge + gg) + u.z * u.x * (ga - gb - ge + gf) +
+           u.x * u.y * u.z * (-ga + gb + gc - gd + ge - gf - gg + gh);
+  g.x += du.x * (k1 + k4 * u.y + k6 * u.z + k7 * u.y * u.z);
+  g.y += du.y * (k2 + k4 * u.x + k5 * u.z + k7 * u.x * u.z);
+  g.z += du.z * (k3 + k5 * u.y + k6 * u.x + k7 * u.x * u.y);
+  return g;
+}
+vec3 curl_noise(vec3 p, float t, int oct, uint seed) {
+  float amp = 1.0, fr = 1.0;
+  vec3 c = vec3(0.0);
+  for (int o = 0; o < oct; o++) {
+    vec3 s = vec3(p.x * fr + t * 0.31 * float(o + 1), p.y * fr - t * 0.23, p.z * fr + t * 0.17 * float(o + 2));
+    uint sd = seed + 1013u * uint(o);
+    vec3 a = noised(s, sd), b = noised(s + vec3(31.4, -17.1, 9.2), sd + 1u),
+         d = noised(s + vec3(-11.7, 41.3, -27.9), sd + 2u);
+    c += amp * vec3(d.y - b.z, a.z - d.x, b.x - a.y);
+    amp *= 0.5;
+    fr *= 2.0;
+  }
+  return c;
+}
+
+vec3 cvel(int i, int j, int k) {
+  return vec3(0.5 * (F[pc.o0.x + uidx(i, j, k)] + F[pc.o0.x + uidx(i + 1, j, k)]),
+              0.5 * (F[pc.o0.y + vidx(i, j, k)] + F[pc.o0.y + vidx(i, j + 1, k)]),
+              0.5 * (F[pc.o0.z + widx(i, j, k)] + F[pc.o0.z + widx(i, j, k + 1)]));
+}
+
+void main() {
+  int op = pc.n.w;
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  int nx = pc.n.x, ny = pc.n.y, nz = pc.n.z;
+  uint nc = uint(nx * ny * nz);
+  if (op == 0) {
+    if (g.x >= nx || g.y >= ny || g.z >= nz || g.z < 1) return;
+    float T = 0.5 * (F[pc.o1.x + cidx(g.x, g.y, g.z - 1)] + F[pc.o1.x + cidx(g.x, g.y, g.z)]);
+    float d = 0.5 * (F[pc.o0.w + cidx(g.x, g.y, g.z - 1)] + F[pc.o0.w + cidx(g.x, g.y, g.z)]);
+    F[pc.o0.z + widx(g.x, g.y, g.z)] += pc.f0.x * (pc.f0.y * T - pc.f0.z * d);
+  } else if (op == 1) {
+    if (any(greaterThanEqual(g, pc.n.xyz))) return;
+    uint c = cidx(g.x, g.y, g.z), T = pc.o1.x;
+    if (g.x == 0 || g.y == 0 || g.z == 0 || g.x == nx - 1 || g.y == ny - 1 || g.z == nz - 1) {
+      F[T + c] = 0.0; F[T + nc + c] = 0.0; F[T + 2u * nc + c] = 0.0; F[T + 3u * nc + c] = 0.0;
+      return;
+    }
+    vec3 xm = cvel(g.x - 1, g.y, g.z), xp = cvel(g.x + 1, g.y, g.z), ym = cvel(g.x, g.y - 1, g.z),
+         yp = cvel(g.x, g.y + 1, g.z), zm = cvel(g.x, g.y, g.z - 1), zp = cvel(g.x, g.y, g.z + 1);
+    float inv2 = pc.f0.y;
+    vec3 w = vec3((yp.z - ym.z) - (zp.y - zm.y), (zp.x - zm.x) - (xp.z - xm.z), (xp.y - xm.y) - (yp.x - ym.x)) * inv2;
+    F[T + c] = w.x; F[T + nc + c] = w.y; F[T + 2u * nc + c] = w.z; F[T + 3u * nc + c] = length(w);
+  } else if (op == 2) {
+    if (any(greaterThanEqual(g, pc.n.xyz))) return;
+    uint c = cidx(g.x, g.y, g.z), T = pc.o1.x;
+    vec3 fo = vec3(0.0);
+    float eps_dx = pc.f0.x, inv2 = pc.f0.y;
+    if (eps_dx > 0.0 && !(g.x == 0 || g.y == 0 || g.z == 0 || g.x == nx - 1 || g.y == ny - 1 || g.z == nz - 1)) {
+      uint wm = T + 3u * nc, sy = uint(nx), sz = uint(nx * ny);
+      vec3 gr = vec3(F[wm + c + 1u] - F[wm + c - 1u], F[wm + c + sy] - F[wm + c - sy], F[wm + c + sz] - F[wm + c - sz]) * inv2;
+      gr /= length(gr) + 1e-6;
+      vec3 w = vec3(F[T + c], F[T + nc + c], F[T + 2u * nc + c]);
+      fo = eps_dx * cross(gr, w);
+    }
+    float tamp = pc.f0.z;
+    if (tamp > 0.0) {
+      float wgt = min(1.0, F[pc.o0.w + c] + F[pc.o1.y + c]);
+      if (wgt > 1e-3) {
+        vec3 X = vec3(pc.f1.z, pc.f1.w, pc.f2.x) + (vec3(g) + 0.5) * pc.f1.y;
+        // the push fades out as the local speed approaches 0.5 * amplitude (see nova_core.c)
+        float lim = max(0.0, 1.0 - length(cvel(g.x, g.y, g.z)) / (0.5 * tamp));
+        fo += tamp * wgt * lim * curl_noise(X * pc.f0.w, pc.f1.x, 2, pc.o1.w);
+      }
+    }
+    F[T + 4u * nc + c] = fo.x; F[T + 5u * nc + c] = fo.y; F[T + 6u * nc + c] = fo.z;
+  } else if (op == 3) {
+    if (any(greaterThanEqual(g, pc.n.xyz))) return;
+    uint c = cidx(g.x, g.y, g.z), T = pc.o1.x, sy = uint(nx), sz = uint(nx * ny);
+    float h = 0.5 * pc.f0.x;
+    if (g.x > 0) F[pc.o0.x + uidx(g.x, g.y, g.z)] += h * (F[T + 4u * nc + c] + F[T + 4u * nc + c - 1u]);
+    if (g.y > 0) F[pc.o0.y + vidx(g.x, g.y, g.z)] += h * (F[T + 5u * nc + c] + F[T + 5u * nc + c - sy]);
+    if (g.z > 0) F[pc.o0.z + widx(g.x, g.y, g.z)] += h * (F[T + 6u * nc + c] + F[T + 6u * nc + c - sz]);
+  } else if (op == 4) {
+    float a = pc.f0.x, e = pc.f0.y;
+    if (g.x <= nx && g.y < ny && g.z < nz) { uint c = pc.o0.x + uidx(g.x, g.y, g.z); F[c] = (F[c] + (pc.f1.x - F[c]) * a) * e; }
+    if (g.x < nx && g.y <= ny && g.z < nz) { uint c = pc.o0.y + vidx(g.x, g.y, g.z); F[c] = (F[c] + (pc.f1.y - F[c]) * a) * e; }
+    if (g.x < nx && g.y < ny && g.z <= nz) { uint c = pc.o0.z + widx(g.x, g.y, g.z); F[c] = (F[c] + (pc.f1.z - F[c]) * a) * e; }
+  }
+}

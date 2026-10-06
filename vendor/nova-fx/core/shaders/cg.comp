@@ -1,0 +1,91 @@
+#version 450
+// Conjugate-gradient vector ops on level 0 (n = cell count in n.x). Partials -> R[o2.x + workgroup].
+//  0 q = A p, partial sum(p.q)        o0 = (p, q, -, stencil), n.y = nx, n.z = ny
+//  1 x += a p, r -= a q, partial max|r|   o0 = (x, p, r, q), a = R[o1.y] / R[o1.z] (rz / pq)
+//  2 partial sum(r.z)                 o0 = (r, z, -, -)
+//  3 p = z + b p                      o0 = (p, z, -, -), b = R[o1.y] / R[o1.z] (rz_new / rz_old)
+//  4 r = b - A x (inactive: x=r=0), partial max|r|, partial max|b|   o0 = (x, b, r, stencil), n.y,n.z dims
+//  5 reduce R[o1.x .. +o1.y) -> R[o1.z] (sum if o1.w == 0 else max), single workgroup
+//  6 x = 0 where inactive, partial max|b|   o0 = (x, b, -, stencil)
+layout(local_size_x = 256) in;
+#include "common.glsl"
+shared float red[256];
+shared float red2[256];
+float Ax(uint X, uint st, uint c, int nx, int ny) {
+  uint w = S[st + c];
+  uint dg = w & 255u, m = w >> 8;
+  if (dg == 0u) return 0.0;
+  uint sy = uint(nx), sz = uint(nx * ny);
+  float s = float(dg) * F[X + c];
+  if ((m & 1u) != 0u) s -= F[X + c - 1u];
+  if ((m & 2u) != 0u) s -= F[X + c + 1u];
+  if ((m & 4u) != 0u) s -= F[X + c - sy];
+  if ((m & 8u) != 0u) s -= F[X + c + sy];
+  if ((m & 16u) != 0u) s -= F[X + c - sz];
+  if ((m & 32u) != 0u) s -= F[X + c + sz];
+  return s;
+}
+void main() {
+  int op = pc.n.w;
+  uint l = gl_LocalInvocationIndex;
+  if (op == 5) {
+    float acc = pc.o1.w == 0u ? 0.0 : 0.0;
+    for (uint i = l; i < pc.o1.y; i += 256u) {
+      float v = R[pc.o1.x + i];
+      acc = pc.o1.w == 0u ? acc + v : max(acc, v);
+    }
+    red[l] = acc;
+    barrier();
+    for (uint s = 128u; s > 0u; s >>= 1) {
+      if (l < s) red[l] = pc.o1.w == 0u ? red[l] + red[l + s] : max(red[l], red[l + s]);
+      barrier();
+    }
+    if (l == 0u) R[pc.o1.z] = red[0];
+    return;
+  }
+  uint c = gl_GlobalInvocationID.x, n = uint(pc.n.x);
+  float v = 0.0, v2 = 0.0;
+  if (c < n) {
+    if (op == 0) {
+      float q = Ax(pc.o0.x, pc.o0.w, c, pc.n.y, pc.n.z);
+      F[pc.o0.y + c] = q;
+      v = F[pc.o0.x + c] * q;
+    } else if (op == 1) {
+      float den = R[pc.o1.z];
+      float a = den != 0.0 ? R[pc.o1.y] / den : 0.0;
+      F[pc.o0.x + c] += a * F[pc.o0.y + c];
+      float r = F[pc.o0.z + c] - a * F[pc.o0.w + c];
+      F[pc.o0.z + c] = r;
+      v = abs(r);
+    } else if (op == 2) {
+      v = F[pc.o0.x + c] * F[pc.o0.y + c];
+    } else if (op == 3) {
+      float den = R[pc.o1.z];
+      float b = den != 0.0 ? R[pc.o1.y] / den : 0.0;
+      F[pc.o0.x + c] = F[pc.o0.y + c] + b * F[pc.o0.x + c];
+    } else if (op == 4) {
+      bool act = (S[pc.o0.w + c] & 255u) != 0u;
+      if (!act) F[pc.o0.x + c] = 0.0;
+      float r = act ? F[pc.o0.y + c] - Ax(pc.o0.x, pc.o0.w, c, pc.n.y, pc.n.z) : 0.0;
+      F[pc.o0.z + c] = r;
+      v = abs(r);
+      v2 = abs(F[pc.o0.y + c]);
+    }
+  }
+  if (op == 3) return;
+  red[l] = v;
+  red2[l] = v2;
+  barrier();
+  bool is_max = op == 1 || op == 4;
+  for (uint s = 128u; s > 0u; s >>= 1) {
+    if (l < s) {
+      red[l] = is_max ? max(red[l], red[l + s]) : red[l] + red[l + s];
+      red2[l] = max(red2[l], red2[l + s]);
+    }
+    barrier();
+  }
+  if (l == 0u) {
+    R[pc.o2.x + gl_WorkGroupID.x] = red[0];
+    if (op == 4) R[pc.o2.y + gl_WorkGroupID.x] = red2[0];
+  }
+}

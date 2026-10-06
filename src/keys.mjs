@@ -98,7 +98,7 @@ export async function verifyKey(root, id, value, { fetch = globalThis.fetch } = 
     }
   } catch (e) {
     if (e.status === 401 && /permission/i.test(e.message)) return { ok: true, detail: 'it works, but can\'t read your plan (give the key the "User: read" permission to see credits here)' };
-    if (e.status === 401 || e.status === 403) return { ok: false, detail: 'ElevenLabs refused it (check that you copied the whole key)' };
+    if (e.auth || e.status === 401 || e.status === 403) return { ok: false, detail: 'ElevenLabs refused it (check that you copied the whole key)' };
     return { ok: null, detail: `couldn't check it (${e.message})` };
   }
   throw new UserError(`unknown key "${id}"`);

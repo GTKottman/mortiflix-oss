@@ -58,6 +58,21 @@ key is checked with a free, read-only API call before it's saved.
 - The runner checks a project's keys before each session: if one is missing, the project pauses and tells you which,
   instead of starting a session that would fail.
 
+## What setup installs, and the browser
+
+- **Nothing installs without you asking** (a confirmation in the terminal, an Install button on the page), and
+  everything goes into the studio folder or your own user tools: never system-wide, never as root. Sources: npm
+  (Strudel), Google's Chrome for Testing, astral.sh (uv), PyPI via uv (browser-harness), GitHub (ComfyUI, the TTS
+  Audio Suite, the 3D toolkits), download.blender.org. The web studio's install endpoints are behind the same guards
+  as every other change (loopback or token, the `X-Mortiflix` header).
+- **The studio's Blender has its own profile**, so add-ons installed for sessions never load in your own Blender, and
+  your add-ons never load in theirs.
+- **Asset sites run in your own Chrome**, with your logins. Sessions may use only the sites you listed, download
+  only into the project, and must stop and ask (`needs-you`) before anything that signs up, accepts terms or pays.
+  That's an instruction plus your review, not a technical wall: a session with browser access can do what your
+  browser can. List only sites you're comfortable with, and keep the session sandbox off only when you trust what
+  the project reads (browser-harness needs your Chrome, which the sandbox hides).
+
 ## The web server
 
 A web server on localhost can be reached by any page open in your browser, so:

@@ -1,0 +1,73 @@
+#version 450
+// Emitter sources and particle deposits, gathered per cell from points bucketed by tile (no atomics,
+// same order as the CPU loop, so results match it). n.w = op:
+//  0 emitter splat   PTS = (x, y, z, vx, vy, vz) per point; PIDX = tile ranges (nt + 1) then point ids
+//                    o0 = (density, heat, fuel, -), o1 = (U, V, W, -), f0 = (R^2, dens, heat, fuel),
+//                    f1 = (vel_amt, mode, dx, -), f2 = (ox, oy, oz, -), o2 = (ntx, nty, has_vel, rr tiles)
+//  1 deposit         PTS = (x, y, z, smoke, heat, fuel); tiles hold particles by base cell; trilinear add
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+#include "common.glsl"
+void main() {
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  if (any(greaterThanEqual(g, pc.n.xyz))) return;
+  int ntx = int(pc.o2.x), nty = int(pc.o2.y), ntz = (pc.n.z + 7) / 8;
+  uint nt = uint(ntx * nty * ntz);
+  uint c = cidx(g.x, g.y, g.z);
+  float dx = pc.f1.z;
+  vec3 org = pc.f2.xyz;
+  if (pc.n.w == 0) {
+    if (S[pc.o2.w + c] != 0u) return;  // solid
+    int t = (g.x >> 3) + ntx * ((g.y >> 3) + nty * (g.z >> 3));
+    uint a = PIDX[t], b = PIDX[t + 1];
+    if (a == b) return;
+    vec3 cc = org + (vec3(g) + 0.5) * dx;
+    float R2 = pc.f0.x;
+    bool mx = pc.f1.y > 0.5;
+    float d = F[pc.o0.x + c], T = F[pc.o0.y + c], fu = F[pc.o0.z + c];
+    uint iu = pc.o1.x + uidx(g.x, g.y, g.z), iv = pc.o1.y + vidx(g.x, g.y, g.z), iw = pc.o1.z + widx(g.x, g.y, g.z);
+    float U = F[iu], V = F[iv], W = F[iw];
+    bool has_vel = pc.f1.w > 0.5;
+    for (uint q = a; q < b; q++) {
+      uint p = PIDX[nt + 1u + q];
+      vec3 pp = vec3(PTS[6u * p], PTS[6u * p + 1u], PTS[6u * p + 2u]);
+      vec3 dv = cc - pp;
+      float r = dot(dv, dv) / R2;
+      if (r >= 1.0) continue;
+      float w = (1.0 - r) * (1.0 - r);
+      if (!mx) { d += pc.f0.y * w; T += pc.f0.z * w; fu += pc.f0.w * w; }
+      else { d = max(d, pc.f0.y * w); T = max(T, pc.f0.z * w); fu = max(fu, pc.f0.w * w); }
+      if (has_vel && pc.f1.x > 0.0) {
+        float al = min(1.0, w * pc.f1.x);
+        U += (PTS[6u * p + 3u] - U) * al;
+        V += (PTS[6u * p + 4u] - V) * al;
+        W += (PTS[6u * p + 5u] - W) * al;
+      }
+    }
+    F[pc.o0.x + c] = d; F[pc.o0.y + c] = T; F[pc.o0.z + c] = fu;
+    if (has_vel) { F[iu] = U; F[iv] = V; F[iw] = W; }
+  } else {
+    // particles are bucketed by the tile of their base cell (floor(p/dx - 0.5)); a cell receives from
+    // particles whose base cell is itself or one less on each axis, so look at this tile and the 7 below
+    float sd = 0.0, sh = 0.0, sf = 0.0;
+    int tx = g.x >> 3, ty = g.y >> 3, tz = g.z >> 3;
+    for (int q = 0; q < 8; q++) {
+      int ux = tx - (q & 1), uy = ty - ((q >> 1) & 1), uz = tz - ((q >> 2) & 1);
+      if (ux < 0 || uy < 0 || uz < 0) continue;
+      if ((q & 1) != 0 && (g.x & 7) != 0) continue;  // only the first column of a tile reaches back
+      if ((q & 2) != 0 && (g.y & 7) != 0) continue;
+      if ((q & 4) != 0 && (g.z & 7) != 0) continue;
+      uint t = uint(ux + ntx * (uy + nty * uz));
+      for (uint k = PIDX[t]; k < PIDX[t + 1u]; k++) {
+        uint p = PIDX[nt + 1u + k];
+        vec3 gp = (vec3(PTS[6u * p], PTS[6u * p + 1u], PTS[6u * p + 2u]) - org) / dx - 0.5;
+        vec3 b0 = floor(gp);
+        ivec3 o = g - ivec3(b0);
+        if (any(lessThan(o, ivec3(0))) || any(greaterThan(o, ivec3(1)))) continue;
+        vec3 t3 = gp - b0;
+        float w = (o.x == 1 ? t3.x : 1.0 - t3.x) * (o.y == 1 ? t3.y : 1.0 - t3.y) * (o.z == 1 ? t3.z : 1.0 - t3.z);
+        sd += PTS[6u * p + 3u] * w; sh += PTS[6u * p + 4u] * w; sf += PTS[6u * p + 5u] * w;
+      }
+    }
+    F[pc.o0.x + c] += sd; F[pc.o0.y + c] += sh; F[pc.o0.z + c] += sf;
+  }
+}

@@ -7,7 +7,8 @@ import { existsSync, mkdirSync, readdirSync, appendFileSync, readFileSync, write
 import { join, basename, extname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { pipeline as streamPipeline } from 'node:stream/promises';
-import { paths, readJson, writeJson, withLock, UserError } from './studio.mjs';
+import { paths, readJson, writeJson, withLock, UserError, loadConfig } from './studio.mjs';
+import { musicConfig } from './setup.mjs';
 import { findPipeline, loadPipeline, snapshotPipeline } from './pipelines.mjs';
 
 export const STATES = ['draft', 'queued', 'waiting', 'paused', 'delivered', 'cancelled'];
@@ -103,6 +104,11 @@ export function startProject(root, id) {
       if (!q.required) continue;
       const ok = q.type === 'files' ? p.intake.files.some((f) => f.field === q.id) : Boolean(p.intake.answers[q.id]);
       if (!ok) throw new UserError(`"${q.label || q.id}" is required`);
+    }
+    // Steps that only run when wanted: music needs the studio's music on and a brief that doesn't say "no music".
+    const noMusic = musicConfig(loadConfig(root)).engine === 'none' || /^\s*(no|none|off)\b/i.test(String(p.intake.answers.music ?? ''));
+    for (const s of pipeline.steps) {
+      if (s.when === 'music' && noMusic) { p.steps ||= {}; p.steps[s.key] = { state: 'skipped' }; }
     }
     p.state = 'queued';
     p.queued_at = now();

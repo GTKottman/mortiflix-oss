@@ -1,0 +1,38 @@
+#version 450
+// Pressure projection pieces. n.w = op:
+//  0 rhs: b = -(div u - expn dx) dx for active cells   o0 = (U, V, W, b), o1 = (expn, -, -, -), o2.x = stencil off, f0.x = dx
+//  1 subtract grad phi from faces not touching solids o0 = (U, V, W, phi), o2 = (solid off, closed floor), f0.x = 1/dx
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+#include "common.glsl"
+void main() {
+  int op = pc.n.w;
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  int nx = pc.n.x, ny = pc.n.y, nz = pc.n.z;
+  if (op == 0) {
+    if (any(greaterThanEqual(g, pc.n.xyz))) return;
+    uint c = cidx(g.x, g.y, g.z);
+    if ((S[pc.o2.x + c] & 255u) == 0u) { F[pc.o0.w + c] = 0.0; return; }
+    float D = F[pc.o0.x + uidx(g.x + 1, g.y, g.z)] - F[pc.o0.x + uidx(g.x, g.y, g.z)] +
+              F[pc.o0.y + vidx(g.x, g.y + 1, g.z)] - F[pc.o0.y + vidx(g.x, g.y, g.z)] +
+              F[pc.o0.z + widx(g.x, g.y, g.z + 1)] - F[pc.o0.z + widx(g.x, g.y, g.z)];
+    float dx = pc.f0.x;
+    F[pc.o0.w + c] = -(D - F[pc.o1.x + c] * dx) * dx;
+  } else {
+    uint so = pc.o2.x;
+    bool cf = pc.o2.y != 0u;
+    uint P = pc.o0.w;
+    float inv = pc.f0.x;
+    if (g.x <= nx && g.y < ny && g.z < nz && !(is_solid(g.x - 1, g.y, g.z, so, cf) || is_solid(g.x, g.y, g.z, so, cf))) {
+      float pl = g.x > 0 ? F[P + cidx(g.x - 1, g.y, g.z)] : 0.0, pr = g.x < nx ? F[P + cidx(g.x, g.y, g.z)] : 0.0;
+      F[pc.o0.x + uidx(g.x, g.y, g.z)] -= (pr - pl) * inv;
+    }
+    if (g.x < nx && g.y <= ny && g.z < nz && !(is_solid(g.x, g.y - 1, g.z, so, cf) || is_solid(g.x, g.y, g.z, so, cf))) {
+      float pl = g.y > 0 ? F[P + cidx(g.x, g.y - 1, g.z)] : 0.0, pr = g.y < ny ? F[P + cidx(g.x, g.y, g.z)] : 0.0;
+      F[pc.o0.y + vidx(g.x, g.y, g.z)] -= (pr - pl) * inv;
+    }
+    if (g.x < nx && g.y < ny && g.z <= nz && !(is_solid(g.x, g.y, g.z - 1, so, cf) || is_solid(g.x, g.y, g.z, so, cf))) {
+      float pl = g.z > 0 ? F[P + cidx(g.x, g.y, g.z - 1)] : 0.0, pr = g.z < nz ? F[P + cidx(g.x, g.y, g.z)] : 0.0;
+      F[pc.o0.z + widx(g.x, g.y, g.z)] -= (pr - pl) * inv;
+    }
+  }
+}

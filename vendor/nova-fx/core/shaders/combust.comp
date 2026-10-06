@@ -1,0 +1,31 @@
+#version 450
+// Combustion + cooling + dissipation per cell (mirrors combust() in nova_core.c).
+// o0 = (density, heat, fuel, flame), o1.x = expn
+// f0 = (ignite, burn_rate, heat_release, smoke_yield), f1 = (expansion, exp(-cool dt), cool_rad, exp(-smoke_decay dt))
+// f2 = (exp(-fuel_decay dt), exp(-flame_decay dt), dt, 0)
+layout(local_size_x = 256) in;
+#include "common.glsl"
+void main() {
+  uint c = gl_GlobalInvocationID.x;
+  if (c >= uint(pc.n.x * pc.n.y * pc.n.z)) return;
+  float fu = F[pc.o0.z + c], T = F[pc.o0.y + c], d = F[pc.o0.x + c];
+  float ign = pc.f0.x, br = pc.f0.y, hr = pc.f0.z, sy = pc.f0.w, ex = pc.f1.x, ec = pc.f1.y, cr = pc.f1.z;
+  float dt = pc.f2.z;
+  float burned = 0.0;
+  if (fu > 0.0 && T > ign) {
+    float rate = br * min(4.0, 0.5 + (T - ign) * 2.0);
+    burned = min(fu, rate * dt);
+    fu -= burned;
+    T += hr * burned;
+    d += sy * burned;
+  }
+  F[pc.o1.x + c] = min(ex * burned / dt, 0.4 / dt);
+  float inten = br > 0.0 ? burned / (br * dt) : 0.0;
+  float fl = F[pc.o0.w + c] * pc.f2.y;
+  F[pc.o0.w + c] = inten > fl ? min(inten, 4.0) : fl;
+  T *= ec;
+  if (cr > 0.0 && T > 0.0) T = T / pow(1.0 + 3.0 * cr * T * T * T * dt, 1.0 / 3.0);
+  F[pc.o0.y + c] = T;
+  F[pc.o0.x + c] = d * pc.f1.w;
+  F[pc.o0.z + c] = fu * pc.f2.x;
+}

@@ -103,6 +103,17 @@ returns `{ ok, error?, usage?, cost_usd? }`; `available(config, root)` says whet
 
 Adding a backend is adding a module with those two functions to `BACKENDS` in `runner.mjs`.
 
+## Setup (`src/setup.mjs`)
+
+The parts of setup (Claude, narration, music, assets, 3D), each tool's detection and installer (`strudel`, `chrome`,
+`browser-harness`, `blender`, `blender-addons`, `comfyui`), and the owner's choices in `config.json` (`music`,
+`assets.sites`, `tools.*` paths). `setupStatus` (async: it asks ComfyUI) feeds the walkthrough and the page;
+`setupStatusSync` feeds the session brief's "This studio" section. `sessionToolsEnv` gives sessions `MFX_STRUDEL`,
+`MFX_CHROME`, `MFX_BLENDER` (+ `BLENDER_USER_RESOURCES`, `MFX3D`), `MFX_MUSIC` and `MFX_ASSETS`. Studio skills that
+depend on setup (`harness/skills/blender-3d`, `harness/skills/assets`, the toolkits' own skills, browser-harness's)
+are installed into each project by `torch.mjs`. A pipeline step with `"when": "music"` is marked `skipped` at start
+when the studio or the brief has no music; a skipped step counts as finished only once its own predecessors are.
+
 ## Keys (`src/keys.mjs`)
 
 One registry of the keys a studio can hold (Anthropic, ElevenLabs), what each is for, and when a project needs it:

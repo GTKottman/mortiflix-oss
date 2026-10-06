@@ -1,0 +1,32 @@
+#version 450
+// MacCormack advection of one face component. n.w = op | comp << 4.
+// o0 = (U, V, W, src), o1 = (dst, hat, mn, mx), f0.x = dt/dx.
+// op 0: hat/min/max, op 1: correction into dst. (op 2: plain SL into dst, for maccormack off)
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+#include "common.glsl"
+void main() {
+  int op = pc.n.w & 15, comp = pc.n.w >> 4;
+  ivec3 s = pc.n.xyz + ivec3(comp == 0 ? 1 : 0, comp == 1 ? 1 : 0, comp == 2 ? 1 : 0);
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  if (any(greaterThanEqual(g, s))) return;
+  vec3 o = vec3(comp == 0 ? 0.0 : 0.5, comp == 1 ? 0.0 : 0.5, comp == 2 ? 0.0 : 0.5);
+  uint c = uint(g.x + s.x * (g.y + s.y * g.z));
+  vec3 p = vec3(g) + o;
+  uint U = pc.o0.x, V = pc.o0.y, W = pc.o0.z, SRC = pc.o0.w, DST = pc.o1.x, HAT = pc.o1.y, MN = pc.o1.z, MX = pc.o1.w;
+  if (op == 0 || op == 2) {
+    vec3 b = trace(U, V, W, p, pc.f0.x) - o;
+    float lo, hi;
+    float v = samp_clamp_mm(SRC, s, b, lo, hi);
+    if (op == 2) { F[DST + c] = v; return; }
+    if (any(lessThan(b, vec3(0.0))) || any(greaterThan(b, vec3(s - 1)))) { lo = 1e30; hi = -1e30; } // trace left the grid: SL
+    F[HAT + c] = v; F[MN + c] = lo; F[MX + c] = hi;
+  } else {
+    vec3 fw = trace(U, V, W, p, -pc.f0.x) - o;
+    float lo, hi;
+    float til = samp_clamp_mm(HAT, s, fw, lo, hi);
+    float hat = F[HAT + c];
+    float val = hat + 0.5 * (F[SRC + c] - til);
+    bool off = any(lessThan(fw, vec3(0.0))) || any(greaterThan(fw, vec3(s - 1)));
+    F[DST + c] = (off || val < F[MN + c] || val > F[MX + c]) ? hat : val;
+  }
+}

@@ -5,6 +5,7 @@ import { mkdirSync, rmSync, writeFileSync, readFileSync, existsSync, appendFileS
 import { join } from 'node:path';
 import { REPO, paths, loadConfig, readSessionEnv } from './studio.mjs';
 import { sessionVoiceEnv } from './voice/index.mjs';
+import { sessionToolsEnv } from './setup.mjs';
 import { listProjects, loadProject, projectPaths, projectPipeline, update, event, readEvents, now } from './projects.mjs';
 import { settle, needsYou } from './gates.mjs';
 import { projectMissingKeys, missingKeysText } from './keys.mjs';
@@ -132,8 +133,9 @@ export class Runner extends EventEmitter {
       prepareWorkdir(root, projectId);
       mkdirSync(join(paths(root).run, 'shared'), { recursive: true });
       writeTorch(root, projectId, { backend: config.backend, reason });
-      // Keys and settings for the session: session.env, then the studio's voice (its key only if it narrates with it).
-      const sessionEnv = { ...readSessionEnv(root), ...sessionVoiceEnv(root), MFX_HOME: REPO };
+      // Keys and settings for the session: session.env, the studio's voice (its key only if it narrates with it), and the
+      // tools setup installed (Strudel, Chrome, the studio's Blender) with the owner's music and asset choices.
+      const sessionEnv = { ...readSessionEnv(root), ...sessionVoiceEnv(root), ...sessionToolsEnv(root), MFX_HOME: REPO };
       bridge = await openBridge({ root, projectId, sessionId, workdir: pp.work, renders: this.renders, sessionEnv });
       this.addActivity(projectId, { kind: 'info', text: `Session started (${config.backend}). ${reason}` });
       result = await backend.run({
@@ -166,7 +168,11 @@ export class Runner extends EventEmitter {
       p.usage.sessions += 1;
       p.usage.input_tokens += result?.usage?.input_tokens || 0;
       p.usage.output_tokens += result?.usage?.output_tokens || 0;
-      if (result?.cost_usd) p.usage.cost_usd = Math.round(((p.usage.cost_usd || 0) + result.cost_usd) * 10000) / 10000;
+      if (result?.cost_usd) {
+        p.usage.cost_usd = Math.round(((p.usage.cost_usd || 0) + result.cost_usd) * 10000) / 10000;
+        // On a Claude plan the reported cost is list price, not a charge: keep that part apart so it's never shown as spend.
+        if (result.billing === 'plan') p.usage.plan_usd = Math.round(((p.usage.plan_usd || 0) + result.cost_usd) * 10000) / 10000;
+      }
       p.no_progress = progressed ? 0 : (p.no_progress || 0) + 1;
       p.without_gate = gated ? 0 : (p.without_gate || 0) + 1;
       if (p.status?.key === '_render') p.status = null;

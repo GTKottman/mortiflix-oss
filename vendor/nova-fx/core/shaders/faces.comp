@@ -1,0 +1,66 @@
+#version 450
+// Face-array operations over all three components. n.w = op:
+//  0 copy  dst = src               o0 = (dU, dV, dW, -), o1 = (sU, sV, sW, -)
+//  1 reflect dst = 2 src - dst     same offsets
+//  2 clamp |v| <= f0.x             o0 = (U, V, W)
+//  3 zero faces next to solids     o0 = (U, V, W), o2.x = solid offset in S, o2.y = closed floor
+//  4 max |v| partials -> R[o2.z + workgroup]
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+#include "common.glsl"
+shared float red[256];
+void main() {
+  int op = pc.n.w;
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  int nx = pc.n.x, ny = pc.n.y, nz = pc.n.z;
+  bool cu = g.x <= nx && g.y < ny && g.z < nz, cv = g.x < nx && g.y <= ny && g.z < nz,
+       cw = g.x < nx && g.y < ny && g.z <= nz;
+  uint iu = uidx(g.x, g.y, g.z), iv = vidx(g.x, g.y, g.z), iw = widx(g.x, g.y, g.z);
+  if (op == 0) {
+    if (cu) F[pc.o0.x + iu] = F[pc.o1.x + iu];
+    if (cv) F[pc.o0.y + iv] = F[pc.o1.y + iv];
+    if (cw) F[pc.o0.z + iw] = F[pc.o1.z + iw];
+  } else if (op == 1) {
+    // reflect only between two fluid cells (see faces_op in nova_core.c); o2.x = level-0 stencil
+    uint st = pc.o2.x;
+    bool here = g.x < nx && g.y < ny && g.z < nz && (S[st + cidx(g.x, g.y, g.z)] & 255u) != 0u;
+    if (cu) {
+      bool fl = here && g.x > 0 && (S[st + cidx(g.x - 1, g.y, g.z)] & 255u) != 0u;
+      F[pc.o0.x + iu] = fl ? 2.0 * F[pc.o1.x + iu] - F[pc.o0.x + iu] : F[pc.o1.x + iu];
+    }
+    if (cv) {
+      bool fl = here && g.y > 0 && (S[st + cidx(g.x, g.y - 1, g.z)] & 255u) != 0u;
+      F[pc.o0.y + iv] = fl ? 2.0 * F[pc.o1.y + iv] - F[pc.o0.y + iv] : F[pc.o1.y + iv];
+    }
+    if (cw) {
+      bool fl = here && g.z > 0 && (S[st + cidx(g.x, g.y, g.z - 1)] & 255u) != 0u;
+      F[pc.o0.z + iw] = fl ? 2.0 * F[pc.o1.z + iw] - F[pc.o0.z + iw] : F[pc.o1.z + iw];
+    }
+  } else if (op == 2) {
+    float m = pc.f0.x;
+    if (cu) F[pc.o0.x + iu] = clamp(F[pc.o0.x + iu], -m, m);
+    if (cv) F[pc.o0.y + iv] = clamp(F[pc.o0.y + iv], -m, m);
+    if (cw) F[pc.o0.z + iw] = clamp(F[pc.o0.z + iw], -m, m);
+  } else if (op == 3) {
+    uint so = pc.o2.x;
+    bool cf = pc.o2.y != 0u;
+    if (cu && (is_solid(g.x - 1, g.y, g.z, so, cf) || is_solid(g.x, g.y, g.z, so, cf))) F[pc.o0.x + iu] = 0.0;
+    if (cv && (is_solid(g.x, g.y - 1, g.z, so, cf) || is_solid(g.x, g.y, g.z, so, cf))) F[pc.o0.y + iv] = 0.0;
+    if (cw && (is_solid(g.x, g.y, g.z - 1, so, cf) || is_solid(g.x, g.y, g.z, so, cf))) F[pc.o0.z + iw] = 0.0;
+  } else if (op == 4) {
+    float m = 0.0;
+    if (cu) m = max(m, abs(F[pc.o0.x + iu]));
+    if (cv) m = max(m, abs(F[pc.o0.y + iv]));
+    if (cw) m = max(m, abs(F[pc.o0.z + iw]));
+    uint l = gl_LocalInvocationIndex;
+    red[l] = m;
+    barrier();
+    for (uint s = 128u; s > 0u; s >>= 1) {
+      if (l < s) red[l] = max(red[l], red[l + s]);
+      barrier();
+    }
+    if (l == 0u) {
+      uvec3 ng = gl_NumWorkGroups, w = gl_WorkGroupID;
+      R[pc.o2.z + w.x + ng.x * (w.y + ng.y * w.z)] = red[0];
+    }
+  }
+}

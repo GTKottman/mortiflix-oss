@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { REPO, paths } from './studio.mjs';
 import { projectPaths, loadProject, projectPipeline, readJournal, readEvents } from './projects.mjs';
 import { stepView, stepChecks, submissions } from './gates.mjs';
+import { blenderSkillDirs, blenderDocsDir, browserHarnessSkill, setupStatusSync } from './setup.mjs';
 
 // The owner's own words: their direction for this video (outranks the pipeline's defaults, never the gate rules).
 const fence = (label, text) => `<<<${label} (the owner's words)\n${text}\n${label}>>>`;
@@ -25,11 +26,48 @@ export function prepareWorkdir(root, id) {
       cpSync(join(skillsSrc, name), dest, { recursive: true });
     }
   }
+  installStudioSkills(root, pp.work);
   mkdirSync(join(pp.work, '.mortiflix'), { recursive: true });
   copyFileSync(join(REPO, 'harness', 'GATES.md'), join(pp.work, '.mortiflix', 'GATES.md'));
   const checklist = join(pp.pipeline, 'checklist.md');
   if (existsSync(checklist) && !existsSync(join(pp.work, 'checklist.md'))) copyFileSync(checklist, join(pp.work, 'checklist.md'));
   mkdirSync(join(pp.work, 'feedback'), { recursive: true });
+}
+
+// The owner's setup choices, in plain words (from \`mortiflix setup\`).
+function studioSection(root) {
+  const st = setupStatusSync(root);
+  const lines = [];
+  if (st.music.engine === 'none') lines.push('- **Music:** the owner chose no music. Skip any music step with a short note (`mfx step-done`), never improvise one.');
+  else if (st.strudel.ok && st.chrome.ok) lines.push(`- **Music:** Strudel ${st.strudel.version}, scored after the animatic with the **music** skill.${st.music.midi ? ' The owner also wants the **MIDI pack** (every part, the cue sheet) with the final.' : ''}`);
+  else lines.push('- **Music:** Strudel isn\'t set up yet. When a music step is ready, `mfx needs-you`: "Run `mortiflix setup music`, then resume."');
+  if (st.assets.sites.length && st['browser-harness'].ok) {
+    lines.push(`- **Asset sites** (the **assets** skill, in the owner's own Chrome): ${st.assets.sites.map((x) => `${x.url}${x.notes ? ` (${x.notes})` : ''}`).join('; ')}. Only these.`);
+  } else lines.push('- **Asset sites:** none. Make every visual yourself; never download assets from the web.');
+  if (st['blender-addons'].installed?.length) lines.push(`- **3D:** the studio's Blender (\`$MFX_BLENDER\`) with MoBlend, Nova FX, Camera, Animate, Math and Circuits: the **blender-3d** skill.`);
+  else if (st.blender.ok) lines.push('- **3D:** Blender is here but the toolkits aren\'t installed (`mortiflix setup 3d`).');
+  else lines.push('- **3D:** not set up. If the brief needs 3D, ask at the next gate whether to build it in 2D or wait for `mortiflix setup 3d`.');
+  return lines.join('\n');
+}
+
+// Skills that come from what the studio has set up, not from the pipeline: 3D (the studio's Blender and its toolkits,
+// with the toolkits' own skills and docs) and assets (the owner's asset sites, through browser-harness).
+function installStudioSkills(root, work) {
+  const skills = join(work, '.claude', 'skills');
+  const put = (name, from) => { const dest = join(skills, name); rmSync(dest, { recursive: true, force: true }); cpSync(from, dest, { recursive: true }); return dest; };
+  for (const name of ['blender-3d', 'assets', 'browser-harness', 'blender-camera-director', 'blender-animate', 'blender-math', 'circuit-explainer-video']) rmSync(join(skills, name), { recursive: true, force: true });
+  const kits = blenderSkillDirs(root);
+  if (kits.length) {
+    const dest = put('blender-3d', join(REPO, 'harness', 'skills', 'blender-3d'));
+    if (existsSync(blenderDocsDir(root))) cpSync(blenderDocsDir(root), join(dest, 'toolkits'), { recursive: true });
+    for (const dir of kits) put(dir.split(/[\\/]/).pop(), dir);
+  }
+  const bh = browserHarnessSkill(root);
+  if (bh) {
+    put('assets', join(REPO, 'harness', 'skills', 'assets'));
+    mkdirSync(join(skills, 'browser-harness'), { recursive: true });
+    writeFileSync(join(skills, 'browser-harness', 'SKILL.md'), bh);
+  }
 }
 
 // Why this session is starting, in one line, from what happened since the last one.
@@ -97,6 +135,8 @@ export function writeTorch(root, id, { backend, reason }) {
     return `${q.label || q.id}: ${project.intake.answers[q.id] ?? '(not given)'}`;
   }).join('\n');
 
+  const studioText = studioSection(root);
+
   const md = `# Mortiflix project: ${project.title}
 
 You're Claude, making this ${pipeline.makes} in the Mortiflix studio for its owner: one person, who wrote the brief and
@@ -114,13 +154,17 @@ reviews every reviewed step. This file is rewritten before every session: read i
 - **Your tools:** \`bash\` (a persistent shell in this folder; commands time out after 10 minutes, so long renders go through
   \`mfx render\`) and the file editor. Read a skill with the editor's view command before following it.` : ''}
 
+## This studio
+
+${studioText}
+
 ## The steps
 
 | Step | Name | Review | Runs after | State | Error checks |
 |---|---|---|---|---|---|
 ${stepRows}
 
-States: \`ready\` (start it), \`working\`, \`in_review\` (waiting for the owner: don't touch), \`changes\` (make the next
+States: \`skipped\` (not wanted for this video: leave it), \`ready\` (start it), \`working\`, \`in_review\` (waiting for the owner: don't touch), \`changes\` (make the next
 version), \`approved\` / \`done\` (finished: reuse it), \`blocked\` (waits on another step).
 
 ## What the owner said

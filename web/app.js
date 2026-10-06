@@ -60,8 +60,8 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch { /* private mode */ } },
 };
 const BACKEND_NAMES = { 'claude-code': 'Claude Code', 'anthropic-api': 'Claude API', demo: 'Demo' };
-const ICONS = { approved: ['✓', 'done'], done: ['✓', 'done'], in_review: ['●', 'review'], changes: ['↺', 'changes'], working: ['…', ''], ready: ['○', ''], blocked: ['·', ''] };
-const STATE_WORDS = { approved: 'approved', done: 'done', in_review: 'waiting for you', changes: 'changes asked', working: 'in progress', ready: 'up next', blocked: 'later' };
+const ICONS = { approved: ['✓', 'done'], done: ['✓', 'done'], skipped: ['–', ''], in_review: ['●', 'review'], changes: ['↺', 'changes'], working: ['…', ''], ready: ['○', ''], blocked: ['·', ''] };
+const STATE_WORDS = { approved: 'approved', done: 'done', skipped: 'skipped', in_review: 'waiting for you', changes: 'changes asked', working: 'in progress', ready: 'up next', blocked: 'later' };
 const icon = (state) => { const [g, c] = ICONS[state] || ['·', '']; return h('span', { class: `ico ${c}`, 'aria-hidden': 'true' }, g); };
 
 // ---------- routing ----------
@@ -239,7 +239,7 @@ async function projectView(id) {
   const questions = openQs.length ? h('section', null, h('h2', null, 'Questions'), openQs.map((q) => questionForm(id, q))) : null;
 
   const subsByStep = (key) => d.submissions.filter((s) => s.step === key);
-  const steps = h('section', null, h('h2', null, 'Steps', h('span', { class: 'count' }, `${d.steps.filter((s) => ['approved', 'done'].includes(s.state)).length}/${d.steps.length}`)),
+  const steps = h('section', null, h('h2', null, 'Steps', h('span', { class: 'count' }, `${d.steps.filter((s) => ['approved', 'done', 'skipped'].includes(s.state)).length}/${d.steps.length}`)),
     h('ul', { class: 'rows' }, d.steps.map((s) => h('li', { class: 'row' }, icon(s.state),
       h('div', { class: 'main' }, h('span', { class: 'title' }, s.name),
         h('div', { class: 'meta' }, s.review === 'internal' ? 'made in the studio' : `you review ${s.review === 'frames' ? 'the frames' : s.review === 'questions' ? 'questions' : `the ${s.review}`}`,
@@ -272,7 +272,7 @@ async function projectView(id) {
     h('div', { class: 'head' }, h('div', null, h('h1', null, p.title), h('div', { class: 'sub' }, h('span', { class: 'chip' }, d.pipeline.name), h('span', null, p.backend ? `${BACKEND_NAMES[p.backend]} backend` : ''))), actions),
     stateBlock, deliverables, questions, steps, activity, brief, events, journal,
     h('p', { class: 'meta', style: { color: 'var(--faint)', fontSize: '12px', marginTop: '18px' } },
-      `${usage.sessions} session${usage.sessions === 1 ? '' : 's'}${usage.output_tokens ? ` · ${usage.output_tokens.toLocaleString()} output tokens` : ''}${usage.cost_usd ? ` · $${usage.cost_usd}` : ''}`),
+      `${usage.sessions} session${usage.sessions === 1 ? '' : 's'}${usage.output_tokens ? ` · ${usage.output_tokens.toLocaleString()} output tokens` : ''}${usage.cost_text ? ` · ${usage.cost_text}` : ''}`),
   );
   for (const det of document.querySelectorAll('details[data-key]')) if (open.has(det.dataset.key)) det.open = true;
   log.scrollTop = log.scrollHeight;
@@ -635,7 +635,7 @@ async function settingsView() {
   const decideCheck = (cid, approve) => async () => { try { await api(`/api/checks/${cid}`, { method: 'POST', body: { approve } }); settingsView(); } catch (e) { toast(e.message, true); } };
 
   const voiceBlock = await voiceSection();
-  add(body, 
+  add(body, await setupSection(), 
     h('section', null, h('h2', null, 'Who makes the videos'), h('ul', { class: 'rows' }, backendRows), extra,
       field('Session limit', h('input', { type: 'number', min: 5, max: 1440, value: c.maxSessionMinutes, oninput: (e) => { c.maxSessionMinutes = e.target.value; }, style: { maxWidth: '120px' } }), 'Minutes before a session is stopped (the next one picks up from its handoff).'),
       h('div', { class: 'form-end' }, msg, save)),
@@ -650,6 +650,86 @@ async function settingsView() {
   );
   mount(h('div', { class: 'head' }, h('h1', null, 'Settings')), body);
   draw();
+}
+
+// ---------- setup (Settings › Setup): every part, why it's needed, what it installs ----------
+
+async function setupSection() {
+  const wrap = h('section', { id: 'setup' });
+  let info = await api('/api/setup');
+  let poll = null;
+  const field = (label, control, help) => h('div', { class: 'field' }, h('label', null, label), h('div', null, control, help ? h('div', { class: 'help' }, help) : null));
+  const chip = (ok, yes, no, neutral = false) => h('span', { class: `chip ${ok ? 'ok' : neutral ? '' : 'bad'}` }, ok ? yes : no);
+  const refresh = async () => { info = await api('/api/setup'); draw(); };
+
+  // One tool: its status, what installing it means, an Install button and the live log while it runs.
+  const UPDATABLE = ['strudel', 'browser-harness', 'blender-addons'];   // the others are reused when found
+  const toolRow = (id, label = info.tools[id].name) => {
+    const st = info.status[id];
+    const t = info.tools[id];
+    const job = info.jobs[id];
+    const running = job?.state === 'running';
+    const btn = h('button', { class: 'btn', disabled: running || Object.values(info.jobs).some((j) => j.state === 'running'), onclick: async () => {
+      try { await api(`/api/setup/install/${id}`, { method: 'POST' }); await refresh(); startPoll(); } catch (e) { toast(e.message, true); }
+    } }, running ? 'Installing…' : st.ok ? 'Update' : 'Install');
+    const log = job ? h('pre', { class: 'setup-log' }, job.log.join('\n') || '…') : null;
+    if (log) setTimeout(() => { log.scrollTop = log.scrollHeight; });
+    return h('div', { class: 'tool-row' },
+      h('div', { class: 'actions' }, h('b', null, label), chip(st.ok, st.detail, st.detail), !st.ok || UPDATABLE.includes(id) || running ? btn : null),
+      h('div', { class: 'help' }, `${t.what}. Goes to ${t.where} (${t.size}).`),
+      job?.state === 'failed' ? h('div', { class: 'err' }, job.error) : null,
+      job?.problems ? h('div', { class: 'err' }, job.problems) : null,
+      log);
+  };
+  const startPoll = () => {
+    clearInterval(poll);
+    poll = setInterval(async () => {
+      if (!document.body.contains(wrap)) return clearInterval(poll);
+      await refresh();
+      if (!Object.values(info.jobs).some((j) => j.state === 'running')) { clearInterval(poll); loadStudio(); }
+    }, 1200);
+  };
+
+  function draw() {
+    const st = info.status;
+    const part = (id) => info.parts.find((x) => x.id === id);
+    const intro = (id) => [h('p', null, part(id).why), h('p', { class: 'meta' }, part(id).needs)];
+    let sites = st.assets.sites.map((x) => x.url).join('\n');
+    fill(wrap,
+      h('h2', null, 'Setup'),
+      h('p', { class: 'meta' }, 'What the studio uses, why, and what it installs. Everything goes into the studio folder (or your own user tools), never system-wide, and nothing installs until you press Install.'),
+      field(part('claude').title, h('div', null, ...intro('claude'), h('p', { class: 'meta' }, 'Choose below, in "Who makes the videos".'))),
+      field(part('narration').title, h('div', null, ...intro('narration'),
+        h('p', { class: 'meta' }, `This computer: ${st.gpu.reason}`),
+        st.gpu.fits ? toolRow('comfyui') : null,
+        h('p', { class: 'meta' }, 'Pick the voice below, in "Narration".'))),
+      field(part('music').title, h('div', null, ...intro('music'),
+        choiceChips(['Original score', 'No music'], st.music.engine === 'none' ? 'No music' : 'Original score', async (v) => { info = await api('/api/setup/music', { method: 'PUT', body: { engine: v === 'No music' ? 'none' : 'strudel' } }); draw(); }),
+        st.music.engine === 'none' ? null : h('div', null,
+          h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: st.music.midi, onchange: async (e) => { info = await api('/api/setup/music', { method: 'PUT', body: { midi: e.target.checked } }); draw(); } }),
+            'Also deliver a MIDI pack (every part, the stems and a cue sheet) to remake the music in your own DAW'),
+          toolRow('strudel'), toolRow('chrome')))),
+      field(part('assets').title, h('div', null, ...intro('assets'),
+        h('p', null, 'If you have a website you use for assets, list it here, one per line. Without one, you won\'t get stock assets: sessions make every visual themselves.'),
+        h('textarea', { rows: 3, placeholder: 'https://…', value: sites, oninput: (e) => { sites = e.target.value; } }),
+        h('div', { class: 'actions', style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: async () => {
+          try { info = await api('/api/setup/assets', { method: 'PUT', body: { sites: sites.split(/\n+/).map((x) => x.trim()).filter(Boolean) } }); draw(); toast('Asset sites saved'); } catch (e) { toast(e.message, true); }
+        } }, 'Save sites')),
+        st.assets.sites.length ? h('div', null, toolRow('browser-harness'),
+          st['browser-harness'].ok && info.recordings ? h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: /enabled/i.test(info.recordings) && !/disabled/i.test(info.recordings), onchange: async (e) => { info = await api('/api/setup/recordings', { method: 'PUT', body: { enable: e.target.checked } }); draw(); } }),
+            'Keep local browser recordings (screenshots and traces of what sessions do, on this machine only)') : null,
+          h('p', { class: 'meta' }, 'Sessions use your own Chrome: sign in to these sites there. The first time, Chrome may ask you to allow remote debugging (chrome://inspect/#remote-debugging).')) : null)),
+      field(part('3d').title, h('div', null, ...intro('3d'),
+        toolRow('blender'),
+        st.blender.ok ? toolRow('blender-addons') : null,
+        st.blender.ok ? h('ul', { class: 'checks-list' }, info.addons.map((a) => h('li', null, h('span', null, h('b', null, a.name), h('span', { class: 'meta' }, ` · ${a.about}`))))) : null,
+        st['blender-addons'].installed?.length ? h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: async () => { try { await api('/api/setup/blender', { method: 'POST' }); toast('Opening Blender'); } catch (e) { toast(e.message, true); } } }, 'Open the studio\'s Blender'),
+          h('span', { class: 'meta' }, 'Camera Flight: 3D Viewport › N › Flight')) : null)),
+    );
+  }
+  draw();
+  if (Object.values(info.jobs).some((j) => j.state === 'running')) startPoll();
+  return wrap;
 }
 
 // ---------- keys (Settings › Keys, and New video when one is missing) ----------

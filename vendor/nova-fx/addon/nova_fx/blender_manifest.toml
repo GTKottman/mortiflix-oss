@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "nova_fx"
+version = "1.0.0"
+name = "Nova FX"
+tagline = "Optimized particles, fire, sparks and fireworks"
+maintainer = "Mortiflix"
+type = "add-on"
+tags = ["Physics", "Animation"]
+
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+platforms = ["linux-x64"]
+
+[permissions]
+files = "Writes simulation caches (particle frames and OpenVDB volumes) to disk"

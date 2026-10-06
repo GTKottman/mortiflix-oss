@@ -10,6 +10,8 @@ import * as gates from './gates.mjs';
 import { Runner, BACKENDS } from './runner.mjs';
 import * as voice from './voice/index.mjs';
 import * as keys from './keys.mjs';
+import * as setup from './setup.mjs';
+import { costText } from './usage.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -19,6 +21,8 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
 
   ${C.b('Getting started')}
   mortiflix init [--backend claude-code|anthropic-api|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
+  mortiflix setup                                              the walkthrough: Claude, narration, music, assets, 3D
+  mortiflix setup <claude|narration|music|assets|3d>           one part of it (mortiflix setup status: where things stand)
   mortiflix keys                                               add or change your keys (Anthropic, ElevenLabs, others)
   mortiflix doctor                                             check the tools a pipeline needs
   mortiflix demo                                               a full walk-through with placeholder work (free)
@@ -41,6 +45,9 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
   mortiflix voice local                                        set up Qwen3-TTS on your GPU through ComfyUI
   mortiflix voice none                                         no narration (on-screen text and music)
   mortiflix voice test ["a line to speak"]                     hear the current voice
+
+  ${C.b('3D')}
+  mortiflix blender [file.blend]                               open the studio's Blender, with its toolkits and Camera Flight
 
   ${C.b('Settings')}
   mortiflix config [key [value]]                               show or change settings
@@ -68,9 +75,13 @@ export async function run(argv = process.argv.slice(2)) {
   const [cmd, ...rest] = a._;
   // `await` the command: a bare `return promise` inside try would let its rejection escape the catch.
   const dispatch = async () => {
+    // `--help` anywhere prints help: it never runs the command (`serve --help` used to start a server).
+    if (a.help || a.h) return console.log(HELP);
     switch (cmd) {
       case 'init': return init(root, a);
       case 'keys': return keysCmd(root, rest);
+      case 'setup': return setupCmd(root, rest, a);
+      case 'blender': needStudio(root); return console.log(`Opening ${setup.openBlender(root, rest)} with the studio's profile (Camera Flight: 3D Viewport › N › Flight).`);
       case 'doctor': return doctor(root);
       case 'demo': return demo(root);
       case 'pipelines': return pipelines(root);
@@ -154,12 +165,12 @@ async function init(root, a) {
   console.log(`  Backend: ${C.b(backend)} ${C.dim(BACKENDS[backend].available(loadConfig(root), root).detail)}`);
   if (backend === 'demo') console.log(C.dim('  (No Claude Code login or API key found: the demo backend makes placeholder work. Install Claude Code, or add an API key with `mortiflix keys`.)'));
   if (process.stdin.isTTY && !a.yes) {
-    console.log(`\n  ${C.b('Keys')}: Mortiflix runs on your own accounts. Keys stay in this studio folder, readable by you alone.`);
-    const go = (await prompterOnce(`  Add them now? ${C.dim('[Y/n]')} `)).trim().toLowerCase();
-    if (!go.startsWith('n')) await keysWalk(root);
-  } else console.log(`\n  ${C.b('Keys')}: ${C.b('mortiflix keys')} when you want an API backend or ElevenLabs narration.`);
-  console.log(`\n  ${C.b('Narration')} (optional): ${voiceOffer()}`);
-  console.log(`\n  Next: ${C.b('mortiflix demo')} for a free walk-through, or ${C.b('mortiflix serve')} to open the studio in your browser.`);
+    console.log(`\n  Next, the setup walkthrough: what Mortiflix uses (Claude, narration, music, assets, 3D), why, and what it would`);
+    console.log('  install. Nothing installs without asking, and you can skip any part.');
+    if (await confirm('  Set it up now?', true)) await setupWalk(root);
+    else console.log(`  Any time: ${C.b('mortiflix setup')}`);
+  } else console.log(`\n  Next: ${C.b('mortiflix setup')} walks through Claude, narration, music, assets and 3D.`);
+  console.log(`\n  Then: ${C.b('mortiflix demo')} for a free walk-through, or ${C.b('mortiflix serve')} to open the studio in your browser.`);
 }
 
 function doctor(root) {
@@ -180,6 +191,8 @@ function doctor(root) {
   for (const k of keys.keyStatus(root)) {
     row(Boolean(k.source) || !k.in_use, k.id, k.source ? `${k.name}: ${k.source}${k.in_use ? '  ← in use' : ''}` : k.in_use ? `${k.name} missing: mortiflix keys` : `${k.name}: not set (optional)`);
   }
+  const tools = setup.setupStatusSync(root);
+  for (const id of ['strudel', 'chrome', 'browser-harness', 'blender', 'blender-addons']) row(tools[id].ok || !['strudel', 'chrome'].includes(id) || tools.music.engine === 'none', id, tools[id].ok ? tools[id].detail : `${tools[id].detail} (mortiflix setup)`);
   const extra = keys.sessionKeyNames(root);
   row(true, 'session.env', extra.length ? `other keys for sessions: ${extra.join(', ')}` : 'no other keys (optional: mortiflix keys)');
 }
@@ -289,11 +302,12 @@ function status(root, id) {
   console.log(`${C.b(p.title)}  ${C.dim(`${pipeline.name} · ${p.id}`)}`);
   console.log(`${STATE_LABEL[p.state]}${p.status ? ` · ${p.status.text}` : ''}${p.needs_you ? `\n${C.red(`needs you: ${p.needs_you.text}`)}` : ''}\n`);
   for (const s of gates.stepView(p, pipeline)) {
-    const icon = { approved: C.green('✔'), done: C.green('✔'), in_review: C.acc('●'), changes: C.red('↺'), working: '…', ready: '○', blocked: C.dim('·') }[s.state];
+    const icon = { approved: C.green('✔'), done: C.green('✔'), skipped: C.dim('–'), in_review: C.acc('●'), changes: C.red('↺'), working: '…', ready: '○', blocked: C.dim('·') }[s.state];
     console.log(`${icon} ${s.name.padEnd(16)} ${C.dim(s.state.replace('_', ' '))}${s.version ? C.dim(` v${s.version}`) : ''}`);
   }
   const usage = p.usage;
-  console.log(C.dim(`\n${usage.sessions} session(s)${usage.cost_usd ? ` · $${usage.cost_usd}` : ''}${usage.output_tokens ? ` · ${usage.output_tokens.toLocaleString()} output tokens` : ''}`));
+  console.log(C.dim(`\n${usage.sessions} session(s)${usage.output_tokens ? ` · ${usage.output_tokens.toLocaleString()} output tokens` : ''}`));
+  if (costText(usage)) console.log(C.dim(costText(usage)));
   console.log(C.dim('\nLog:'));
   for (const e of readEvents(root, id, { limit: 12 })) console.log(C.dim(`  ${e.t.slice(5, 16).replace('T', ' ')} ${e.event}${e.step ? ` ${e.step}${e.version ? ` v${e.version}` : ''}` : ''} ${e.details ? `· ${e.details.slice(0, 80)}` : ''}`));
 }
@@ -497,6 +511,162 @@ async function keysCmd(root, [sub, name]) {
   if (sub) throw new Error('mortiflix keys [set|remove <name>]');
   if (!process.stdin.isTTY) return showKeys(root);
   return keysWalk(root);
+}
+
+// ---- setup ----
+
+async function confirm(question, yes = false) {
+  const v = (await prompterOnce(`${question} ${C.dim(yes ? '[Y/n]' : '[y/N]')} `)).trim().toLowerCase();
+  return v ? v.startsWith('y') : yes;
+}
+
+const PART_IDS = setup.PARTS.map((p) => p.id);
+
+function partHeader(part, i) {
+  console.log(`\n${C.acc(`${i + 1}/${setup.PARTS.length}`)} ${C.b(part.title)}`);
+  console.log(`  ${part.why}`);
+  console.log(C.dim(`  Needs: ${part.needs}`));
+}
+
+// Installs one tool after saying what it is, where it goes and how big it is.
+async function offerInstall(root, id, { ask = true } = {}) {
+  const info = setup.TOOL_INFO[id];
+  console.log(`  ${C.b(info.name)}: ${info.what}. Goes to ${info.where} (${info.size}).`);
+  if (ask && !(await confirm('  Install it now?', true))) { console.log(C.dim('  Skipped.')); return false; }
+  const started = Date.now();
+  try {
+    const r = await setup.installTool(root, id, { log: (l) => console.log(C.dim(`    ${l}`)) });
+    console.log(`  ${r.problems ? C.acc('●') : C.green('✔')} ${info.name}: ${r.detail || 'installed'}${r.problems ? ` (${r.problems})` : ''} ${C.dim(`${Math.round((Date.now() - started) / 1000)} s`)}`);
+    return true;
+  } catch (e) {
+    console.log(C.red(`  ✖ ${info.name}: ${e.message}`));
+    return false;
+  }
+}
+
+const mark = (ok) => (ok ? C.green('✔') : C.dim('·'));
+
+async function setupPart(root, id, st) {
+  if (id === 'claude') {
+    const config = loadConfig(root);
+    const cc = BACKENDS['claude-code'].available(config, root);
+    console.log(`  ${mark(cc.ok)} Claude Code: ${cc.detail}`);
+    console.log(`  ${mark(Boolean(keys.keySource(root, 'anthropic')))} Anthropic API key: ${keys.keySource(root, 'anthropic') || 'not set'}`);
+    console.log(`  In use: ${C.b(config.backend)}`);
+    if (cc.ok && config.backend !== 'claude-code' && await confirm('  Use your Claude Code login (your plan pays)?', true)) saveConfig(root, { backend: 'claude-code' });
+    if (!cc.ok) {
+      console.log(C.dim('  Claude Code isn\'t installed: https://claude.com/claude-code (then run this again), or use an API key.'));
+      if (await confirm('  Use an Anthropic API key instead (you pay per token)?', true) && await askKey(root, 'anthropic', { required: true })) saveConfig(root, { backend: 'anthropic-api' });
+    }
+    return;
+  }
+  if (id === 'narration') {
+    const v = voice.voiceConfig(root);
+    const local = st.gpu;
+    console.log(`  Now: ${C.b({ none: 'no narration', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer' }[v.engine])}`);
+    console.log(`  1. ElevenLabs: their voices, paid per character. Needs an API key.`);
+    console.log(`  2. This computer: Qwen3-TTS through ComfyUI, free and private. ${local.fits ? C.green(local.reason) : C.red(local.reason)}`);
+    console.log('  3. No narration: on-screen text, music and sound.');
+    const pick = (await prompterOnce(`  Which? ${C.dim(`[Enter keeps ${v.engine}]`)} `)).trim();
+    if (pick === '1') { await voiceCmd(root, ['elevenlabs']); }
+    else if (pick === '2') {
+      if (!local.fits) return console.log(C.red('  This machine can\'t run it: pick ElevenLabs or none.'));
+      if (!st.comfyui.ok) {
+        if (st.comfyui.installed) { console.log('  The studio\'s ComfyUI is installed but not running: starting it.'); setup.startComfy(root); }
+        else if (!(await offerInstall(root, 'comfyui'))) return;
+      }
+      await voiceCmd(root, ['local']);
+    } else if (pick === '3') { voice.saveVoice(root, { engine: 'none' }); console.log('  Narration off.'); }
+    return;
+  }
+  if (id === 'music') {
+    const m = setup.musicConfig(loadConfig(root));
+    if (!(await confirm('  Score your videos with original music (Strudel)?', m.engine !== 'none'))) { setup.saveMusic(root, { engine: 'none' }); return console.log('  No music: music steps are skipped.'); }
+    if (!st.strudel.ok) await offerInstall(root, 'strudel', { ask: false });
+    else console.log(`  ${mark(true)} Strudel ${st.strudel.version}`);
+    if (!st.chrome.ok) await offerInstall(root, 'chrome');
+    else { console.log(`  ${mark(true)} Renders in ${st.chrome.path}`); await setup.installTool(root, 'chrome'); }
+    console.log(C.dim('  The score is always rendered by Strudel and used in the video. A MIDI pack adds every part as MIDI, the stems'));
+    console.log(C.dim('  and a cue sheet (tempo, sections, hit points), for remaking the music in your own DAW.'));
+    const midi = await confirm('  Also deliver a MIDI pack with each video?', m.midi);
+    setup.saveMusic(root, { engine: 'strudel', midi });
+    return console.log(`  ${C.green('✔')} Music: Strudel${midi ? ' + MIDI pack' : ''}.`);
+  }
+  if (id === 'assets') {
+    const cur = setup.assetsConfig(loadConfig(root)).sites;
+    if (cur.length) console.log(`  Your sites now: ${cur.map((x) => x.url).join(', ')}`);
+    console.log('  If you have a website you use for assets, list it here, one per line (Enter when done).');
+    console.log(C.dim('  Without one, you won\'t get stock assets: sessions make every visual themselves.'));
+    const sites = [];
+    for (;;) {
+      const v = (await prompterOnce(`  Site ${sites.length + 1}${cur.length && !sites.length ? C.dim(' (Enter keeps your list, - clears it)') : ''}: `)).trim();
+      if (!v) break;
+      if (v === '-') { sites.length = 0; setup.saveAssetSites(root, []); console.log('  Cleared.'); break; }
+      sites.push(v);
+    }
+    if (sites.length) {
+      try { setup.saveAssetSites(root, sites); } catch (e) { return console.log(C.red(`  ✖ ${e.message}`)); }
+    }
+    const now = setup.assetsConfig(loadConfig(root)).sites;
+    if (!now.length) return console.log('  No asset sites.');
+    if (!st['browser-harness'].ok) { if (!(await offerInstall(root, 'browser-harness'))) return; }
+    else console.log(`  ${mark(true)} browser-harness ${st['browser-harness'].detail}`);
+    const rec = setup.browserHarnessRecordings();
+    if (rec && /default/.test(rec)) {
+      console.log(C.dim('  browser-harness can save screenshots and action traces of what sessions do in the browser, on this machine'));
+      console.log(C.dim('  only (they may include what\'s on those pages), so you can see what happened later.'));
+      setup.browserHarnessRecordings(await confirm('  Keep local browser recordings?', false));
+    }
+    console.log(`  ${C.green('✔')} Sessions will use ${now.map((x) => x.url).join(', ')} in your own Chrome.`);
+    console.log(C.dim('  Sign in to them in Chrome. The first time, Chrome may ask to allow remote debugging: chrome://inspect/#remote-debugging'));
+    return;
+  }
+  if (id === '3d') {
+    if (!(await confirm('  Set up 3D (Blender and the toolkits)?', st.blender.ok))) return console.log(C.dim('  Skipped: 2D only.'));
+    if (!st.blender.ok) { if (!(await offerInstall(root, 'blender'))) return; }
+    else { console.log(`  ${mark(true)} ${st.blender.detail} (${st.blender.path})`); await setup.installTool(root, 'blender'); }
+    console.log(C.dim('  The toolkits go into the studio\'s own Blender profile: your personal Blender setup is never changed.'));
+    for (const t of setup.ADDONS) console.log(C.dim(`    ${t.name}: ${t.about}`));
+    console.log(C.dim('  Nova FX, Mortiflix\'s own particle engine, builds on Linux only for now (it compiles its core with gcc).'));
+    if (st['blender-addons'].ok && !(await confirm('  They\'re installed. Update them?', false))) return;
+    await offerInstall(root, 'blender-addons', { ask: !st['blender-addons'].ok });
+    console.log(`  Open it yourself with ${C.b('mortiflix blender')} (Camera Flight is in the 3D Viewport › N › Flight).`);
+  }
+}
+
+async function showSetup(root) {
+  const st = await setup.setupStatus(root);
+  const v = voice.voiceConfig(root);
+  const config = loadConfig(root);
+  const row = (ok, name, detail) => console.log(`  ${ok === null ? C.dim('·') : ok ? C.green('✔') : C.red('✖')} ${name.padEnd(12)} ${detail}`);
+  console.log(C.b('Your studio'));
+  row(BACKENDS[config.backend].available(config, root).ok, 'Claude', `${config.backend}: ${BACKENDS[config.backend].available(config, root).detail}`);
+  row(v.engine === 'none' ? null : v.engine === 'elevenlabs' ? Boolean(voice.elevenKey(root)) && Boolean(v.elevenlabs.voice_id) : st.comfyui.ok, 'Narration',
+    v.engine === 'none' ? 'none' : v.engine === 'elevenlabs' ? `ElevenLabs: ${v.elevenlabs.voice_name || 'no voice chosen'} on ${v.elevenlabs.model_id}${voice.elevenKey(root) ? '' : ', key missing'}` : `this computer: ${st.comfyui.detail}`);
+  row(st.music.engine === 'none' ? null : st.strudel.ok && st.chrome.ok, 'Music', st.music.engine === 'none' ? 'none' : `Strudel: ${st.strudel.detail}; Chrome: ${st.chrome.ok ? 'found' : 'missing'}${st.music.midi ? '; MIDI pack on' : ''}`);
+  row(st.assets.sites.length ? st['browser-harness'].ok : null, 'Assets', st.assets.sites.length ? `${st.assets.sites.map((x) => x.url).join(', ')} (browser-harness ${st['browser-harness'].ok ? st['browser-harness'].detail : 'missing'})` : 'no sites: sessions make every visual themselves');
+  row(st.blender.ok ? st['blender-addons'].ok : null, '3D', st.blender.ok ? `${st.blender.detail}; ${st['blender-addons'].detail}` : 'not set up');
+}
+
+async function setupWalk(root, only = null) {
+  ensureStudio(root);
+  const parts = only ? setup.PARTS.filter((p) => p.id === only) : setup.PARTS;
+  for (const part of parts) {
+    partHeader(part, setup.PARTS.indexOf(part));
+    if (!only && !(await confirm(`  Set up ${part.title.toLowerCase()} now?`, true))) { console.log(C.dim('  Skipped.')); continue; }
+    // One part failing (a service down, a refused key) never ends the whole walkthrough.
+    try { await setupPart(root, part.id, await setup.setupStatus(root)); }
+    catch (e) { console.log(C.red(`  ✖ ${part.title}: ${e.message}`)); console.log(C.dim(`  Try this part again with: mortiflix setup ${part.id}`)); }
+  }
+  console.log();
+  await showSetup(root);
+}
+
+async function setupCmd(root, [part], a) {
+  needStudio(root);
+  if (part === 'status' || !process.stdin.isTTY) return showSetup(root);
+  if (part && !PART_IDS.includes(part)) throw new Error(`mortiflix setup [${PART_IDS.join('|')}|status]`);
+  return setupWalk(root, part || null);
 }
 
 // One visible line from the terminal (a fresh readline each time, so it can take turns with hiddenPrompt).

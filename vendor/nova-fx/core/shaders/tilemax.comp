@@ -1,0 +1,25 @@
+#version 450
+// Per 8^3 tile: does it hold smoke/heat/fuel/flame? R[o2.x + tile] = max over the tile.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+#include "common.glsl"
+shared float red[512];
+void main() {
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  uint l = gl_LocalInvocationIndex;
+  uint nc = uint(pc.n.x * pc.n.y * pc.n.z);
+  float m = 0.0;
+  if (all(lessThan(g, pc.n.xyz))) {
+    uint c = cidx(g.x, g.y, g.z);
+    for (uint q = 0u; q < 4u; q++) m = max(m, F[pc.o0.x + q * nc + c]);
+  }
+  red[l] = m;
+  barrier();
+  for (uint s = 256u; s > 0u; s >>= 1) {
+    if (l < s) red[l] = max(red[l], red[l + s]);
+    barrier();
+  }
+  if (l == 0u) {
+    uvec3 w = gl_WorkGroupID, ng = gl_NumWorkGroups;
+    R[pc.o2.x + w.x + ng.x * (w.y + ng.y * w.z)] = red[0];
+  }
+}

@@ -16,6 +16,8 @@ import * as gates from '../gates.mjs';
 import { Runner, BACKENDS } from '../runner.mjs';
 import * as voice from '../voice/index.mjs';
 import * as keys from '../keys.mjs';
+import * as setup from '../setup.mjs';
+import { costText } from '../usage.mjs';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -36,6 +38,7 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     writeSecret(root, 'web_token', token);
   }
   const runner = new Runner(root, { log: quiet ? () => {} : (l) => console.log(l) });
+  const installs = new Map(); // tool -> { state: running|done|failed, log: [], result, error }
   const clients = new Set();
   const broadcast = (type, data) => { for (const res of clients) res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); };
   let changeTimer = null;
@@ -105,6 +108,26 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       return after(studioInfo(root, runner));
     }
     if (p.startsWith('/voice')) return voiceApi(root, req, res, url, p, method, after);
+    // Setup: what each part is for, where it stands, and installing a tool (one at a time, log kept for the page).
+    if (p === '/setup' && method === 'GET') return send(res, 200, await setupInfo(root, installs));
+    if (p === '/setup/music' && method === 'PUT') { setup.saveMusic(root, await json(req)); return after(await setupInfo(root, installs)); }
+    if (p === '/setup/assets' && method === 'PUT') { setup.saveAssetSites(root, (await json(req)).sites); return after(await setupInfo(root, installs)); }
+    if (p === '/setup/recordings' && method === 'PUT') { setup.browserHarnessRecordings(Boolean((await json(req)).enable)); return after(await setupInfo(root, installs)); }
+    if (p === '/setup/blender' && method === 'POST') {
+      if (!loopback) throw new BadRequest('Blender opens on the studio\'s own screen: use mortiflix blender there');
+      return send(res, 200, { path: setup.openBlender(root) });
+    }
+    if ((m = p.match(/^\/setup\/install\/([a-z-]+)$/)) && method === 'POST') {
+      const tool = m[1];
+      if (!setup.TOOLS.includes(tool)) throw new BadRequest(`unknown tool (${setup.TOOLS.join(', ')})`);
+      if ([...installs.values()].some((j) => j.state === 'running')) throw new BadRequest('another install is running: wait for it to finish');
+      const job = { state: 'running', log: [], started_at: new Date().toISOString() };
+      installs.set(tool, job);
+      setup.installTool(root, tool, { log: (l) => { job.log.push(l); if (job.log.length > 400) job.log.splice(0, job.log.length - 400); } })
+        .then((r) => { job.state = 'done'; job.result = r; }, (e) => { job.state = 'failed'; job.error = e.message; })
+        .finally(() => changed());
+      return send(res, 202, { tool, state: job.state });
+    }
     // Keys: their status (never their values), and setting one (checked with a free call before it's saved).
     if (p === '/keys' && method === 'GET') return send(res, 200, keysInfo(root));
     if ((m = p.match(/^\/keys\/([A-Za-z][A-Za-z0-9_]*)$/)) && (method === 'PUT' || method === 'DELETE')) {
@@ -330,6 +353,13 @@ function json(req, limit = 2_000_000) {
   });
 }
 
+async function setupInfo(root, installs) {
+  const status = await setup.setupStatus(root);
+  const jobs = Object.fromEntries([...installs].map(([k, j]) => [k, { state: j.state, log: j.log.slice(-60), error: j.error || null, problems: j.result?.problems || null }]));
+  return { parts: setup.PARTS, status, tools: setup.TOOL_INFO, addons: setup.ADDONS.map(({ id, name, about, owner }) => ({ id, name, about, owner: Boolean(owner) })),
+    recordings: setup.browserHarnessRecordings() || null, jobs };
+}
+
 function keysInfo(root) {
   return { keys: keys.keyStatus(root), other: keys.sessionKeyNames(root) };
 }
@@ -377,7 +407,7 @@ function detail(root, id, runner) {
     if (last) activity = readFileSync(join(dir, last), 'utf8').trim().split('\n').slice(-200).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
   }
   return {
-    project: p,
+    project: { ...p, usage: { ...p.usage, cost_text: costText(p.usage) } },
     pipeline: { slug: pipeline.slug, name: pipeline.name, makes: pipeline.makes, intake: pipeline.intake },
     steps: gates.stepView(p, pipeline).map((s) => ({ ...s, checks: gates.stepChecks(root, id, s.key).map((c) => ({ id: c.id, title: c.title })) })),
     submissions: gates.submissions(root, id),

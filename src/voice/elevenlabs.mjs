@@ -83,9 +83,17 @@ export class ElevenLabs {
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       let detail = text;
-      try { const j = JSON.parse(text); detail = j.detail?.message || j.detail?.[0]?.msg || j.detail || text; } catch { /* plain text */ }
+      let kind = null;
+      try {
+        const j = JSON.parse(text);
+        detail = j.detail?.message || j.detail?.[0]?.msg || j.detail || text;
+        kind = j.detail?.type || j.detail?.status || j.detail?.code || null;
+      } catch { /* plain text */ }
       const err = new Error(`ElevenLabs ${res.status}: ${String(typeof detail === 'string' ? detail : JSON.stringify(detail)).slice(0, 300)}`);
       err.status = res.status;
+      // A bad key isn't always a 401: ElevenLabs answers some with 400 { type: "authentication_error", status: "invalid_api_key" }.
+      err.auth = res.status === 401 || res.status === 403 || /authentication_error|invalid_api_key|unauthorized/i.test(`${kind} ${text}`);
+      err.code = kind;
       throw err;
     }
     if (raw) return res;

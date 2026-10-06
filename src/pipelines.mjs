@@ -13,7 +13,9 @@ import { createHash } from 'node:crypto';
 import { REPO, paths, readJson, UserError } from './studio.mjs';
 
 export const REVIEW_MODES = ['questions', 'document', 'frames', 'video', 'audio', 'internal'];
-export const WORK_KINDS = ['script', 'stills', 'motion', 'audio'];
+export const WORK_KINDS = ['script', 'stills', 'motion', 'audio', 'music'];
+// A step with "when" runs only if the studio and the brief want it (otherwise it's skipped when the project starts).
+export const STEP_CONDITIONS = ['music'];
 const KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 
 export function builtInDir() {
@@ -68,6 +70,7 @@ export function validatePipeline(def, dir) {
     keys.add(s.key);
     need(REVIEW_MODES.includes(s.review), `step "${s.key}": review must be one of ${REVIEW_MODES.join(', ')}`);
     for (const w of s.work || []) need(WORK_KINDS.includes(w), `step "${s.key}": work "${w}" must be one of ${WORK_KINDS.join(', ')}`);
+    if (s.when !== undefined) need(STEP_CONDITIONS.includes(s.when), `step "${s.key}": "when" must be one of ${STEP_CONDITIONS.join(', ')}`);
   }
   for (const s of steps) for (const a of s.after || []) need(keys.has(a), `step "${s.key}" runs after unknown step "${a}"`);
   if (errors.length === 0 && hasCycle(steps)) errors.push('the steps wait on each other in a loop');
@@ -118,6 +121,7 @@ function normalize(def, dir) {
     work: s.work || [],
     delivers: Boolean(s.delivers),
     describe: s.describe || '',
+    ...(s.when ? { when: s.when } : {}),
   }));
   const last = steps[steps.length - 1];
   if (!steps.some((s) => s.delivers) && last.review !== 'internal') last.delivers = true;

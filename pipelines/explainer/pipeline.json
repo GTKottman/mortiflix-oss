@@ -7,6 +7,7 @@
     "motion-design",
     "remotion-motion",
     "voiceover",
+    "music",
     "final-pass"
   ],
   "intake": [
@@ -54,7 +55,18 @@
         "On-screen text and music only"
       ],
       "default": "Narrated",
-      "help": "Uses the studio's narration voice (Settings › Narration: ElevenLabs, or Qwen3-TTS on your own GPU). With none set up, the studio asks."
+      "help": "Uses the studio's narration voice (Settings \u203a Narration: ElevenLabs, or Qwen3-TTS on your own GPU). With none set up, the studio asks."
+    },
+    {
+      "id": "music",
+      "label": "Music",
+      "type": "choice",
+      "choices": [
+        "Original score",
+        "No music"
+      ],
+      "default": "Original score",
+      "help": "An original score written in Strudel after you approve the animatic, built to the video's own timing (Settings \u203a Setup \u203a Music)."
     },
     {
       "id": "script",
@@ -110,7 +122,21 @@
         "script",
         "style-frames"
       ],
-      "describe": "Every beat timed to the voice (or to the music), simple motion, the approved look."
+      "describe": "Every beat timed to the narration with simple motion in the approved look. No music yet: the score is written to this timing next."
+    },
+    {
+      "key": "music",
+      "name": "Music",
+      "review": "video",
+      "when": "music",
+      "work": [
+        "music",
+        "audio"
+      ],
+      "after": [
+        "animatic"
+      ],
+      "describe": "An original score written to the approved animatic: a story with builds and hits on the frames that matter, under the voice. You review it against the picture."
     },
     {
       "key": "build",
@@ -121,7 +147,7 @@
         "audio"
       ],
       "after": [
-        "animatic"
+        "music"
       ]
     },
     {
@@ -218,7 +244,7 @@
       "applies_to": [
         "audio"
       ],
-      "how": "qc.mjs: integrated loudness -14 LUFS (±1) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
+      "how": "qc.mjs: integrated loudness -14 LUFS (\u00b11) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
     },
     {
       "id": "sync",
@@ -227,6 +253,22 @@
         "audio"
       ],
       "how": "Each spoken key word lands with its visual within 2 frames (check against the word timings); music hits land on cuts they were meant for."
+    },
+    {
+      "id": "music-check",
+      "title": "The score passes its check",
+      "applies_to": [
+        "music"
+      ],
+      "how": "node .claude/skills/music/strudel.mjs check --video-sec <length> --fps <fps> ends with 0 problems: harmony locked to the chart, every hit within a frame of its picture moment, nothing playing past the end, every role playing, and the intensity curve following the sections' asks."
+    },
+    {
+      "id": "music-under-voice",
+      "title": "The music sits under the voice",
+      "applies_to": [
+        "music"
+      ],
+      "how": "In the mix, the music is about 18 dB under the voice while it speaks (sidechain ducking), and the score's busiest writing avoids the narration's busiest moments. Every word stays intelligible: check the loudest music passage under speech."
     }
   ]
 }

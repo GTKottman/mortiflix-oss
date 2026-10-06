@@ -1,0 +1,35 @@
+#version 450
+// MacCormack advection of the 4 scalars (density, heat, fuel, flame), traces computed once.
+// o0 = (U, V, W, scalars[4 consecutive]), o1.x = tmp (hat[4], mn[4], mx[4] consecutive), f0.x = dt/dx
+// op 0: back-trace + hat/min/max, op 1: forward-trace correction, written back in place,
+// op 2: no correction (MacCormack off): copy hat back.
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+#include "common.glsl"
+void main() {
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  if (any(greaterThanEqual(g, pc.n.xyz))) return;
+  uint nc = uint(pc.n.x * pc.n.y * pc.n.z), c = cidx(g.x, g.y, g.z);
+  vec3 p = vec3(g) + 0.5;
+  uint U = pc.o0.x, V = pc.o0.y, W = pc.o0.z, SC = pc.o0.w, T = pc.o1.x;
+  if (pc.n.w == 0) {
+    vec3 b = trace(U, V, W, p, pc.f0.x) - 0.5;
+    for (uint q = 0u; q < 4u; q++) {
+      float lo, hi;
+      F[T + q * nc + c] = samp_zero_mm(SC + q * nc, pc.n.xyz, b, lo, hi);
+      F[T + (4u + q) * nc + c] = lo;
+      F[T + (8u + q) * nc + c] = hi;
+    }
+  } else if (pc.n.w == 2) {
+    for (uint q = 0u; q < 4u; q++) F[SC + q * nc + c] = max(F[T + q * nc + c], 0.0);
+  } else {
+    vec3 fw = trace(U, V, W, p, -pc.f0.x) - 0.5;
+    for (uint q = 0u; q < 4u; q++) {
+      float lo, hi;
+      float til = samp_zero_mm(T + q * nc, pc.n.xyz, fw, lo, hi);
+      float hat = F[T + q * nc + c];
+      float val = hat + 0.5 * (F[SC + q * nc + c] - til);
+      val = (val < F[T + (4u + q) * nc + c] || val > F[T + (8u + q) * nc + c]) ? hat : val;
+      F[SC + q * nc + c] = max(val, 0.0);
+    }
+  }
+}

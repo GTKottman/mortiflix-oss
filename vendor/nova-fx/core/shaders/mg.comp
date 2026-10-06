@@ -1,0 +1,81 @@
+#version 450
+// Multigrid V-cycle pieces on one level (dims in n.xyz). n.w = op:
+//  0 x = 0                      o0 = (x, b, r, stencil)
+//  1 red/black Gauss-Seidel     o0 = (x, b, r, stencil), o1.x = colour, o1.y = 1: x is zero (first sweep)
+//  5 residual fused into restriction: coarse b from fine x, b  o0 = (fine x, fine stencil, coarse b,
+//    coarse stencil), o1 = (fine nx, ny, nz, fine b)
+//  2 r = b - A x                o0 = (x, b, r, stencil)
+//  3 restrict to coarse b       o0 = (fine r, fine stencil, coarse b, coarse stencil), o1 = (fine nx, ny, nz, -)
+//  4 prolong: x += coarse x     o0 = (x, -, -, stencil), o1 = (coarse x, cnx, cny, -)
+// stencil word: diag | fluid-neighbour bits << 8
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 4) in;
+#include "common.glsl"
+float Ax(uint X, uint st, uint c, int nx, int ny) {
+  uint w = S[st + c];
+  uint dg = w & 255u, m = w >> 8;
+  if (dg == 0u) return 0.0;
+  uint sy = uint(nx), sz = uint(nx * ny);
+  float s = float(dg) * F[X + c];
+  if ((m & 1u) != 0u) s -= F[X + c - 1u];
+  if ((m & 2u) != 0u) s -= F[X + c + 1u];
+  if ((m & 4u) != 0u) s -= F[X + c - sy];
+  if ((m & 8u) != 0u) s -= F[X + c + sy];
+  if ((m & 16u) != 0u) s -= F[X + c - sz];
+  if ((m & 32u) != 0u) s -= F[X + c + sz];
+  return s;
+}
+void main() {
+  int op = pc.n.w;
+  ivec3 g = ivec3(gl_GlobalInvocationID);
+  if (any(greaterThanEqual(g, pc.n.xyz))) return;
+  int nx = pc.n.x, ny = pc.n.y;
+  uint c = uint(g.x + nx * (g.y + ny * g.z));
+  if (op == 0) {
+    F[pc.o0.x + c] = 0.0;
+  } else if (op == 1) {
+    if (((g.x + g.y + g.z + int(pc.o1.x)) & 1) != 0) return;
+    uint w = S[pc.o0.w + c];
+    uint dg = w & 255u, m = w >> 8;
+    if (dg == 0u) return;
+    uint X = pc.o0.x, sy = uint(nx), sz = uint(nx * ny);
+    float s = F[pc.o0.y + c];
+    if (pc.o1.y != 0u) { F[X + c] = s / float(dg); return; }  /* first red sweep: all neighbours are 0 */
+    if ((m & 1u) != 0u) s += F[X + c - 1u];
+    if ((m & 2u) != 0u) s += F[X + c + 1u];
+    if ((m & 4u) != 0u) s += F[X + c - sy];
+    if ((m & 8u) != 0u) s += F[X + c + sy];
+    if ((m & 16u) != 0u) s += F[X + c - sz];
+    if ((m & 32u) != 0u) s += F[X + c + sz];
+    F[X + c] = s / float(dg);
+  } else if (op == 2) {
+    uint dg = S[pc.o0.w + c] & 255u;
+    F[pc.o0.z + c] = dg != 0u ? F[pc.o0.y + c] - Ax(pc.o0.x, pc.o0.w, c, nx, ny) : 0.0;
+  } else if (op == 3) {
+    // here n.xyz are the COARSE dims
+    if ((S[pc.o0.w + c] & 255u) == 0u) { F[pc.o0.z + c] = 0.0; return; }
+    int fx = int(pc.o1.x), fy = int(pc.o1.y), fz = int(pc.o1.z);
+    float s = 0.0;
+    for (int q = 0; q < 8; q++) {
+      int i = 2 * g.x + (q & 1), j = 2 * g.y + ((q >> 1) & 1), k = 2 * g.z + ((q >> 2) & 1);
+      if (i >= fx || j >= fy || k >= fz) continue;
+      uint cf = uint(i + fx * (j + fy * k));
+      if ((S[pc.o0.y + cf] & 255u) != 0u) s += F[pc.o0.x + cf];
+    }
+    F[pc.o0.z + c] = 0.5 * s;
+  } else if (op == 5) {
+    if ((S[pc.o0.w + c] & 255u) == 0u) { F[pc.o0.z + c] = 0.0; return; }
+    int fx = int(pc.o1.x), fy = int(pc.o1.y), fz = int(pc.o1.z);
+    float s = 0.0;
+    for (int q = 0; q < 8; q++) {
+      int i = 2 * g.x + (q & 1), j = 2 * g.y + ((q >> 1) & 1), k = 2 * g.z + ((q >> 2) & 1);
+      if (i >= fx || j >= fy || k >= fz) continue;
+      uint cf = uint(i + fx * (j + fy * k));
+      if ((S[pc.o0.y + cf] & 255u) != 0u) s += F[pc.o1.w + cf] - Ax(pc.o0.x, pc.o0.y, cf, fx, fy);
+    }
+    F[pc.o0.z + c] = 0.5 * s;
+  } else if (op == 4) {
+    if ((S[pc.o0.w + c] & 255u) == 0u) return;
+    int cx = int(pc.o1.y), cy = int(pc.o1.z);
+    F[pc.o0.x + c] += F[pc.o1.x + uint((g.x >> 1) + cx * ((g.y >> 1) + cy * (g.z >> 1)))];
+  }
+}

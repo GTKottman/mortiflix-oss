@@ -11,7 +11,7 @@ import { paths, readJson, writeJson, withLock, isInside, UserError } from './stu
 import { checksForStep, WORK_KINDS } from './pipelines.mjs';
 import { projectPaths, projectPipeline, loadProject, update, event, safeName, now } from './projects.mjs';
 
-const DONE = ['approved', 'done'];
+const DONE = ['approved', 'done', 'skipped'];
 const KINDS = {
   image: ['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.avif'],
   video: ['.mp4', '.webm', '.mov', '.m4v'],
@@ -32,7 +32,9 @@ const refuse = (msg) => { throw new GateError(msg); };
 // Each step's state. Stored: working, in_review, changes, approved, done. Otherwise derived: ready or blocked.
 export function stepView(project, pipeline) {
   const stored = project.steps || {};
-  const finished = (k) => DONE.includes(stored[k]?.state);
+  const byKey = Object.fromEntries(pipeline.steps.map((s) => [s.key, s]));
+  // A skipped step counts as finished only once the steps it follows are: skipping never lets later work jump ahead.
+  const finished = (k) => DONE.includes(stored[k]?.state) && (stored[k].state !== 'skipped' || (byKey[k]?.after || []).every(finished));
   return pipeline.steps.map((s) => {
     const rec = stored[s.key] || {};
     const state = rec.state || (s.after.every(finished) ? 'ready' : 'blocked');

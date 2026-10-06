@@ -73,6 +73,9 @@ test('keys: checked with a free call, and a refused key is told apart from an un
   assert.equal(plan.ok, true);
   assert.match(plan.detail, /creator plan · 99,000 credits left · commercial use/);
   assert.equal((await keys.verifyKey(root, 'elevenlabs', 'k', { fetch: reply(401, { detail: { message: 'Invalid API key' } }) })).ok, false);
+  // ElevenLabs answers some bad keys with a 400 authentication error, not a 401: still refused, never saved.
+  assert.equal((await keys.verifyKey(root, 'elevenlabs', 'k', { fetch: reply(400, { detail: { type: 'authentication_error', status: 'invalid_api_key', message: 'API key is invalid.' } }) })).ok, false);
+  assert.equal((await keys.verifyKey(root, 'elevenlabs', 'k', { fetch: reply(400, { detail: { message: 'bad request' } }) })).ok, null);
 });
 
 test('the runner asks for a missing key instead of starting a session that would fail', async (t) => {
@@ -127,4 +130,12 @@ test('web: a project that needs a key says which before it starts; keys are set 
   assert.ok(!listed.text.includes('xi-secret'));
   assert.equal((await s('POST', `/api/projects/${created.id}/start`)).status, 200);
   assert.equal((await s('DELETE', '/api/keys/GEMINI_API_KEY')).json.other.length, 0);
+});
+
+test('usage: plan work is shown as what it would have cost, API work as spend', async () => {
+  const { costText } = await import('../src/usage.mjs');
+  assert.equal(costText({ cost_usd: 0 }), null);
+  assert.equal(costText({ cost_usd: 12.9568, plan_usd: 12.9568 }), 'Would have cost about $12.96 at API prices. On your Claude plan, you didn\'t pay that.');
+  assert.equal(costText({ cost_usd: 3.5 }), 'About $3.50 spent on the Claude API.');
+  assert.match(costText({ cost_usd: 5, plan_usd: 2 }), /^About \$3\.00 spent on the Claude API, plus about \$2\.00 of work on your Claude plan/);
 });

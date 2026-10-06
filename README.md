@@ -40,6 +40,9 @@ sessions and days.
 
 ## Quick start
 
+> **Tested mostly on Linux so far.** A Windows version is coming in the next two weeks (by October 20, 2026). macOS
+> should mostly work but hasn't been tested yet.
+
 You need **Node 20+** and **ffmpeg**. For real videos you also need one of:
 - [Claude Code](https://claude.com/claude-code), logged in (your plan pays), or
 - an [Anthropic API key](https://console.anthropic.com/) (you pay per token).
@@ -49,7 +52,8 @@ git clone https://github.com/GTKottman/mortiflix-oss.git && cd mortiflix-oss
 npm install
 npm link                 # puts `mortiflix` on your PATH (or use: node bin/mortiflix)
 
-mortiflix init           # makes the studio folder (~/Mortiflix), picks a backend it finds, asks for your keys
+mortiflix init           # makes the studio folder (~/Mortiflix) and picks a backend it finds
+mortiflix setup          # the walkthrough: Claude, narration, music, assets, 3D (asks before installing anything)
 mortiflix demo           # a full walk-through with placeholder work: free, no Claude needed
 ```
 
@@ -85,6 +89,8 @@ your network).
 | `demo` | a scripted stand-in that walks every gate with placeholder frames and a test-pattern video | nobody |
 
 Pick one with `mortiflix init --backend …`, `mortiflix config backend …`, or Settings in the web studio.
+Each project shows what its Claude work cost: on a Claude plan, what it **would have cost** at API prices (you didn't
+pay that); with an API key through Claude Code, about what you spent.
 
 ## Your keys
 
@@ -106,7 +112,7 @@ For scripts: `echo "$KEY" | mortiflix keys set elevenlabs`.
 
 | Pipeline | Steps you review | Good for |
 |---|---|---|
-| `explainer` | brief → script → style frames → animatic → final | 30 s to 2 min explainers, narrated or not |
+| `explainer` | brief → script → style frames → animatic → music → final | 30 s to 2 min explainers, narrated or not, with an original score |
 | `social-short` | brief → hook frames → final | 15–45 s vertical shorts: hook first, works with sound off |
 | `logo-sting` | directions → final | a 3–8 s logo animation; the quickest real run |
 
@@ -130,6 +136,24 @@ Pick a voice in **Settings › Narration** (or `mortiflix voice`):
 Every line is checked by speech to text and retaken if words go missing; word timings drive the animation.
 Details: [docs/VOICE.md](docs/VOICE.md).
 
+## Setup: music, assets and 3D
+
+`mortiflix setup` (or **Settings › Setup**) explains each part, why it's needed and what it installs, then asks.
+Everything goes into the studio folder, never system-wide. Full details: [docs/SETUP.md](docs/SETUP.md).
+
+- **Music.** After you approve the animatic, the studio scores it with original music written in
+  [Strudel](https://strudel.cc): a dramatic reading, a spotting map from the video's real timing, a blueprint whose
+  sections build, hold back and hit exactly where the picture needs, and a machine check (harmony locked to the
+  chart, every hit within a frame, the intensity curve as planned) before you hear it. Strudel renders it itself.
+  Optionally, a **MIDI pack** (every part, stems, a cue sheet) to remake it in your own DAW.
+  [docs/MUSIC.md](docs/MUSIC.md)
+- **Assets.** If you have a website you use for assets, list it: sessions search it and download what fits in your
+  own Chrome, with your own login, through browser-use's [browser-harness](https://github.com/browser-use/browser-harness),
+  recording every asset's source and licence. Without one, sessions make every visual themselves.
+- **3D.** Blender with the studio's toolkits, in its own profile (your Blender setup is never touched): MoBlend
+  (MoGraph), Camera, Animate, Math, Circuits, Camera Flight for flying the camera yourself (`mortiflix blender`), and
+  **Nova FX**, Mortiflix's own particle engine (particles, fire, sparks, fireworks), which builds on Linux only for now.
+
 ## Make your own pipeline
 
 ```sh
@@ -152,6 +176,8 @@ makes it, it can be a pipeline.
 - [docs/SECURITY.md](docs/SECURITY.md): what a session can and can't reach, and the web server's guards
 - [docs/COMPUTE.md](docs/COMPUTE.md): where the tokens, time and disk go, measured on a real project
 - [docs/VOICE.md](docs/VOICE.md): narration with ElevenLabs or on your own GPU, and every option
+- [docs/SETUP.md](docs/SETUP.md): every part of setup, what it installs and where
+- [docs/MUSIC.md](docs/MUSIC.md): how the music step writes, checks and renders a score
 
 ## Where it came from
 
@@ -159,9 +185,9 @@ Mortiflix began as a hosted motion design studio, where every video was made sta
 gates, with clients approving each one. This repository is that process, boiled down to one machine and opened up,
 so it can be improved by more people than one studio.
 
-Not here yet (from the hosted studio, contributions welcome): a recording booth for your own narration, the music
-system (compose in Strudel, produce in openDAW), workflow preferences learned from your pins, redo rounds on a
-delivered video, share links, and more pipelines (codebase explainers, 3D music videos, real estate films).
+Not here yet (from the hosted studio, contributions welcome): a recording booth for your own narration, workflow
+preferences learned from your pins, redo rounds on a delivered video, share links, music in the social-short pipeline,
+and more pipelines (codebase explainers, 3D music videos, real estate films).
 
 ## Contributing
 
