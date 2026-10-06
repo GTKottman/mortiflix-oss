@@ -49,7 +49,7 @@ git clone https://github.com/GTKottman/mortiflix-oss.git && cd mortiflix-oss
 npm install
 npm link                 # puts `mortiflix` on your PATH (or use: node bin/mortiflix)
 
-mortiflix init           # makes the studio folder (~/Mortiflix) and picks a backend it finds
+mortiflix init           # makes the studio folder (~/Mortiflix), picks a backend it finds, asks for your keys
 mortiflix demo           # a full walk-through with placeholder work: free, no Claude needed
 ```
 
@@ -85,7 +85,22 @@ your network).
 | `demo` | a scripted stand-in that walks every gate with placeholder frames and a test-pattern video | nobody |
 
 Pick one with `mortiflix init --backend …`, `mortiflix config backend …`, or Settings in the web studio.
-`mortiflix config api-key` stores a key without echoing it (it never leaves the studio folder except to the API).
+
+## Your keys
+
+Mortiflix runs on your own accounts: there's nothing to sign up for. `mortiflix init` asks for your keys, and
+`mortiflix keys` changes them any time (Settings › Keys in the web studio does the same):
+
+```
+Anthropic API key   only for the anthropic-api backend (Claude Code uses your own login)
+ElevenLabs API key  only for ElevenLabs narration, sound effects and music
+Other keys          anything a pipeline's tools read from the environment, e.g. GEMINI_API_KEY
+```
+
+Typing is hidden, each key is checked with a free API call before it's saved, and they're written to the studio
+folder only (`secrets.json` and `session.env`, mode 600). If a project needs a key you haven't added, it asks
+**before it starts** (`mortiflix new`, or the web studio's Start button) instead of failing halfway through.
+For scripts: `echo "$KEY" | mortiflix keys set elevenlabs`.
 
 ## What it can make today
 

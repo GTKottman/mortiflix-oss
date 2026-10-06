@@ -17,8 +17,8 @@ studio.
 ```
 ~/Mortiflix/                       ($MORTIFLIX_STUDIO or --studio to move it)
   config.json        settings, no secrets
-  secrets.json       API key, web token (mode 600)
-  session.env        KEY=value lines handed to sessions (e.g. ELEVENLABS_API_KEY)
+  secrets.json       Anthropic and ElevenLabs keys, web token (mode 600; `mortiflix keys`)
+  session.env        other KEY=value lines handed to sessions, e.g. GEMINI_API_KEY (mode 600; `mortiflix keys`)
   checks.json        the studio's error checklist: proposed by sessions, approved by you
   TASTE.md           what you like, learned across projects (sessions add with `mfx taste`)
   pipelines/         your own pipelines (same slug overrides a built-in one)
@@ -102,6 +102,16 @@ returns `{ ok, error?, usage?, cost_usd? }`; `available(config, root)` says whet
 - **demo**: no model; walks the gates with placeholder work through the real bridge.
 
 Adding a backend is adding a module with those two functions to `BACKENDS` in `runner.mjs`.
+
+## Keys (`src/keys.mjs`)
+
+One registry of the keys a studio can hold (Anthropic, ElevenLabs), what each is for, and when a project needs it:
+`anthropic` when it runs on the `anthropic-api` backend, `elevenlabs` when the studio narrates with ElevenLabs and the
+work makes sound. `verifyKey` proves a key with a free, read-only call (`GET /v1/models`, ElevenLabs'
+`/v1/user/subscription`) and tells a refused key (`ok: false`) apart from an unreachable API (`ok: null`). The CLI
+(`mortiflix keys`, `init`, `new`), the web server (`/api/keys`, and `409 needs_keys` from `/start`) and the runner (a
+project that lacks a key for its next steps pauses with `NEEDS_YOU` instead of starting a session) all ask it. Other
+keys for sessions go to `session.env` through `setSessionKey`; only their names are ever shown.
 
 ## Narration (`src/voice/`)
 

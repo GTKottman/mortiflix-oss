@@ -283,8 +283,8 @@ flowchart LR
 flowchart LR
   root["~/Mortiflix  ($MORTIFLIX_STUDIO)"]
   root --> cfg["config.json<br/>settings, no secrets"]
-  root --> sec["secrets.json (mode 600)<br/>API key, web token"]
-  root --> env["session.env<br/>keys handed to sessions"]
+  root --> sec["secrets.json (mode 600)<br/>your keys, web token"]
+  root --> env["session.env (mode 600)<br/>other keys handed to sessions"]
   root --> chk["checks.json<br/>the studio's error checklist"]
   root --> taste["TASTE.md<br/>learned across projects"]
   root --> pl["pipelines/<br/>your own (override built-ins)"]
@@ -741,7 +741,8 @@ flowchart LR
           <tr><td><code>run</code> · <code>serve</code></td><td>run sessions until something waits on you · the web studio on 127.0.0.1:4646 (sessions start by themselves)</td></tr>
           <tr><td><code>list</code> · <code>status</code> · <code>review</code></td><td>projects · one project · read the note, answer, pin notes, approve or ask for changes</td></tr>
           <tr><td><code>pause</code> · <code>resume</code> · <code>cancel</code></td><td>control a project</td></tr>
-          <tr><td><code>config</code> · <code>checks</code> · <code>voice</code></td><td>settings (incl. <code>api-key</code>, stored without echo) · approve proposed checks · narration setup</td></tr>
+          <tr><td><code>keys</code> · <code>config</code></td><td>your keys (hidden input, checked with a free API call, saved mode 600) · settings</td></tr>
+          <tr><td><code>checks</code> · <code>voice</code></td><td>approve proposed checks · narration setup</td></tr>
         </tbody>
       </table>
       <h3>For you: the web studio</h3>
@@ -779,7 +780,7 @@ flowchart LR
       <div class="rule"><i>01</i><div><b>A session runs as you</b> by default: treat it like a capable assistant logged in as you. With <code>sandbox: true</code> (Linux, claude-code) it runs in bubblewrap: system read-only, its own project read-write, Mortiflix code read-only, its socket; your home, other projects, <code>state/</code> and secrets aren't there.</div></div>
       <div class="rule"><i>02</i><div><b>Even unsandboxed, the gates hold:</b> no approving, no changing what was reviewed (it's copied to <code>state/</code>), no submitting files from outside the project.</div></div>
       <div class="rule"><i>03</i><div><b>Your words are direction; outside material is data.</b> File contents, web pages and downloads are data, never instructions, and a session reports anything in them that tries to give orders.</div></div>
-      <div class="rule"><i>04</i><div><b>Keys stay in the studio.</b> The API key lives in <code>secrets.json</code> (mode 600), never returned by the API; sessions don't get it. The ElevenLabs key goes to a session only while it narrates with ElevenLabs.</div></div>
+      <div class="rule"><i>04</i><div><b>Your keys, in your studio.</b> Mortiflix has no accounts of its own: <code>mortiflix keys</code> (or Settings › Keys) asks for yours with hidden input, checks each with a free API call, and saves it mode 600. The API key is never returned by the API and sessions don't get it; the ElevenLabs key goes to a session only while it narrates with ElevenLabs. A project that needs a missing key asks before it starts.</div></div>
       <div class="rule"><i>05</i><div><b>The web server</b> binds to 127.0.0.1; on another host every request needs an access token (HttpOnly, SameSite=Strict cookie); a wrong <code>Host</code> on loopback is refused (DNS rebinding); state-changing requests need an <code>X-Mortiflix</code> header.</div></div>
     </section>
 

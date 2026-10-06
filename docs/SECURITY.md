@@ -44,12 +44,19 @@ rule it out. If you hand a session files or links from sources you don't trust, 
 
 ## Keys
 
-- The Anthropic API key (Settings or `mortiflix config api-key`) is stored in `secrets.json` (mode 600) and is never
-  returned by the API or shown in the UI. Sessions don't get it.
-- The ElevenLabs key (Settings › Narration or `mortiflix voice elevenlabs`) is stored in `secrets.json` too, and
-  given to a session only while ElevenLabs is the narration engine.
-- `session.env` keys are given to every session's environment. Only put keys there that
-  sessions need, and prefer keys with spending limits.
+Every key is yours: Mortiflix has no accounts of its own. You add them with `mortiflix keys` (asked at
+`mortiflix init`, and before a project starts if it needs one) or Settings › Keys. Typing is never echoed, and each
+key is checked with a free, read-only API call before it's saved.
+
+- A new studio folder is created mode 700 (only you can open it).
+- The Anthropic API key is stored in `secrets.json` (mode 600) and is never returned by the API or shown in the UI.
+  Sessions don't get it.
+- The ElevenLabs key is stored in `secrets.json` too, and given to a session only while ElevenLabs is the narration
+  engine.
+- Other keys go to `session.env` (mode 600) and are given to every session's environment. The UI shows their names,
+  never their values. Only add keys that sessions need, and prefer keys with spending limits.
+- The runner checks a project's keys before each session: if one is missing, the project pauses and tells you which,
+  instead of starting a session that would fail.
 
 ## The web server
 

@@ -3,12 +3,13 @@ import { createInterface } from 'node:readline';
 import { existsSync, createReadStream, statSync, writeFileSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
-import { studioRoot, ensureStudio, loadConfig, saveConfig, writeSecret, paths, readJson } from './studio.mjs';
+import { studioRoot, ensureStudio, loadConfig, saveConfig, paths, readJson } from './studio.mjs';
 import { listPipelines, findPipeline } from './pipelines.mjs';
 import { createProject, addIntakeFile, startProject, listProjects, loadProject, projectPaths, projectPipeline, readEvents } from './projects.mjs';
 import * as gates from './gates.mjs';
 import { Runner, BACKENDS } from './runner.mjs';
 import * as voice from './voice/index.mjs';
+import * as keys from './keys.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -18,6 +19,7 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
 
   ${C.b('Getting started')}
   mortiflix init [--backend claude-code|anthropic-api|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
+  mortiflix keys                                               add or change your keys (Anthropic, ElevenLabs, others)
   mortiflix doctor                                             check the tools a pipeline needs
   mortiflix demo                                               a full walk-through with placeholder work (free)
 
@@ -42,7 +44,8 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
 
   ${C.b('Settings')}
   mortiflix config [key [value]]                               show or change settings
-  mortiflix config api-key                                     store an Anthropic API key (asked, not echoed)
+  mortiflix keys set <anthropic|elevenlabs|NAME>               set one key (typed hidden, or piped on stdin)
+  mortiflix keys remove <anthropic|elevenlabs|NAME>
   mortiflix checks [approve|reject <id>]                       the error checklist sessions proposed
 
   --studio <dir> works with every command.`;
@@ -67,6 +70,7 @@ export async function run(argv = process.argv.slice(2)) {
   const dispatch = async () => {
     switch (cmd) {
       case 'init': return init(root, a);
+      case 'keys': return keysCmd(root, rest);
       case 'doctor': return doctor(root);
       case 'demo': return demo(root);
       case 'pipelines': return pipelines(root);
@@ -140,7 +144,7 @@ function detectBackend(root) {
   return 'demo';
 }
 
-function init(root, a) {
+async function init(root, a) {
   const fresh = !existsSync(paths(root).config);
   ensureStudio(root);
   const backend = typeof a.backend === 'string' ? a.backend : (fresh ? detectBackend(root) : loadConfig(root).backend);
@@ -148,7 +152,12 @@ function init(root, a) {
   saveConfig(root, { backend });
   console.log(`${C.green('✔')} Studio ready at ${C.b(root)}`);
   console.log(`  Backend: ${C.b(backend)} ${C.dim(BACKENDS[backend].available(loadConfig(root), root).detail)}`);
-  if (backend === 'demo') console.log(C.dim('  (No Claude Code login or API key found: the demo backend makes placeholder work. Install Claude Code, or `mortiflix config api-key`.)'));
+  if (backend === 'demo') console.log(C.dim('  (No Claude Code login or API key found: the demo backend makes placeholder work. Install Claude Code, or add an API key with `mortiflix keys`.)'));
+  if (process.stdin.isTTY && !a.yes) {
+    console.log(`\n  ${C.b('Keys')}: Mortiflix runs on your own accounts. Keys stay in this studio folder, readable by you alone.`);
+    const go = (await prompterOnce(`  Add them now? ${C.dim('[Y/n]')} `)).trim().toLowerCase();
+    if (!go.startsWith('n')) await keysWalk(root);
+  } else console.log(`\n  ${C.b('Keys')}: ${C.b('mortiflix keys')} when you want an API backend or ElevenLabs narration.`);
   console.log(`\n  ${C.b('Narration')} (optional): ${voiceOffer()}`);
   console.log(`\n  Next: ${C.b('mortiflix demo')} for a free walk-through, or ${C.b('mortiflix serve')} to open the studio in your browser.`);
 }
@@ -168,8 +177,11 @@ function doctor(root) {
     row(r.status === 0 || (bin === 'npx' && spawnSync('npx', ['--version']).status === 0), bin, why);
   }
   if (process.platform === 'linux') row(spawnSync('bwrap', ['--version']).status === 0, 'bwrap', `optional session sandbox (${config?.sandbox ? 'on' : 'off'})`);
-  const env = existsSync(paths(root).sessionEnv);
-  row(true, 'session.env', env ? 'present (keys handed to sessions)' : 'none (optional: e.g. ELEVENLABS_API_KEY for narration)');
+  for (const k of keys.keyStatus(root)) {
+    row(Boolean(k.source) || !k.in_use, k.id, k.source ? `${k.name}: ${k.source}${k.in_use ? '  ← in use' : ''}` : k.in_use ? `${k.name} missing: mortiflix keys` : `${k.name}: not set (optional)`);
+  }
+  const extra = keys.sessionKeyNames(root);
+  row(true, 'session.env', extra.length ? `other keys for sessions: ${extra.join(', ')}` : 'no other keys (optional: mortiflix keys)');
 }
 
 function pipelines(root) {
@@ -216,6 +228,13 @@ async function newProject(root, slug, a) {
     }
   }
   for (const q of pipeline.intake) if (q.type === 'choice' && answers[q.id] === undefined && q.default) answers[q.id] = q.default;
+  // Before anything is made: the keys this project will need, asked for here instead of failing mid-project.
+  const missing = keys.missingKeys(root, { backend: typeof a.backend === 'string' ? a.backend : null, pipeline });
+  if (missing.length) {
+    if (!tty) throw new Error(keys.missingKeysText(missing, 'run this again'));
+    console.log(`\n${C.acc('●')} Before it starts: this project needs your ${missing.map((id) => keys.KEYS[id].name).join(' and ')}.`);
+    for (const id of missing) if (!(await askKey(root, id, { required: true }))) throw new Error(`no ${keys.KEYS[id].name}: nothing was created`);
+  }
   const p = createProject(root, { pipeline: slug, title, answers, backend: typeof a.backend === 'string' ? a.backend : null });
   for (const f of files) {
     if (!existsSync(f.path) || !statSync(f.path).isFile()) throw new Error(`no file ${f.path}`);
@@ -363,11 +382,7 @@ async function serve(root, a) {
 
 async function config(root, [key, value]) {
   needStudio(root);
-  if (key === 'api-key') {
-    const k = (await hiddenPrompt('Anthropic API key (blank to remove): ')).trim();
-    writeSecret(root, 'anthropic_api_key', k || null);
-    return console.log(k ? `${C.green('✔')} Saved (only in ${paths(root).secrets}, readable by you alone).` : 'Removed.');
-  }
+  if (key === 'api-key') return keysCmd(root, ['set', 'anthropic']); // older spelling of `mortiflix keys set anthropic`
   const cur = loadConfig(root);
   if (!key) {
     for (const [k, v] of Object.entries(cur)) console.log(`${k.padEnd(18)} ${JSON.stringify(v)}`);
@@ -406,6 +421,88 @@ function hiddenPrompt(question) {
     };
     stdin.on('data', onData);
   });
+}
+
+// ---- keys ----
+
+const SOURCE_WORDS = { saved: 'saved in this studio', 'session.env': 'from session.env', environment: 'from your environment' };
+
+function showKeys(root) {
+  console.log(`${C.b('Your keys')} ${C.dim(`(in ${paths(root).secrets} and session.env, readable by you alone; never shown)`)}`);
+  for (const k of keys.keyStatus(root)) {
+    const mark = k.source ? C.green('✔') : k.in_use ? C.red('✖') : C.dim('·');
+    console.log(`  ${mark} ${k.name.padEnd(20)} ${k.source ? SOURCE_WORDS[k.source] : k.in_use ? C.red('missing: your studio uses it') : C.dim('not set')}${k.source && k.in_use ? C.dim('  ← in use') : ''}`);
+  }
+  const extra = keys.sessionKeyNames(root);
+  console.log(`  ${C.dim('·')} ${'Other keys'.padEnd(20)} ${extra.length ? extra.join(', ') : C.dim('none')} ${C.dim('(handed to every session)')}`);
+}
+
+// Ask for one key without echoing it, check it with a free call, and save it. Returns where the key now comes from
+// (null if there's none). Enter keeps what's there (or skips), "-" removes a saved key.
+async function askKey(root, id, { required = false } = {}) {
+  const k = keys.KEYS[id];
+  const source = keys.keySource(root, id);
+  console.log(`\n${C.b(k.name)}  ${C.dim(`For ${k.for}`)}`);
+  console.log(C.dim(`  Get one at ${k.get}`));
+  const hint = source ? `Enter keeps the one ${SOURCE_WORDS[source].replace(/^saved /, '')}${source === 'saved' ? ', - removes it' : ''}` : required ? 'Enter to stop' : 'Enter skips';
+  for (;;) {
+    const v = (await hiddenPrompt(`  Paste it ${C.dim(`(hidden; ${hint})`)}: `)).trim();
+    if (!v) return source;
+    if (v === '-') { keys.saveKey(root, id, null); console.log('  Removed.'); return keys.keySource(root, id); }
+    process.stdout.write(C.dim('  Checking… '));
+    const r = await keys.verifyKey(root, id, v);
+    if (r.ok === false) { console.log(C.red(`✖ ${r.detail}. Try again.`)); continue; }
+    keys.saveKey(root, id, v);
+    if (r.tier) voice.saveVoice(root, { elevenlabs: { tier: r.tier } });
+    console.log(r.ok ? `${C.green('✔')} ${r.detail}. Saved.` : `${C.acc('●')} Saved, but ${r.detail}.`);
+    return 'saved';
+  }
+}
+
+// The walk-through: every key in turn, then any others sessions should get.
+async function keysWalk(root) {
+  for (const id of Object.keys(keys.KEYS)) await askKey(root, id);
+  console.log(`\n${C.b('Other keys for sessions')}  ${C.dim('Anything a pipeline\'s tools read from the environment, e.g. GEMINI_API_KEY.')}`);
+  for (;;) {
+    const name = (await prompterOnce(`  Name ${C.dim('(Enter when done)')}: `)).trim().toUpperCase();
+    if (!name) break;
+    const value = (await hiddenPrompt(`  ${name} ${C.dim('(hidden; Enter removes it)')}: `)).trim();
+    try { keys.setSessionKey(root, name, value); console.log(value ? `  ${C.green('✔')} Saved.` : '  Removed.'); } catch (e) { console.log(C.red(`  ✖ ${e.message}`)); }
+  }
+  console.log();
+  showKeys(root);
+  const v = voice.voiceConfig(root);
+  if (keys.keySource(root, 'elevenlabs') && v.engine !== 'elevenlabs') console.log(`\n  To narrate with it: ${C.b('mortiflix voice elevenlabs')} (pick a voice and model).`);
+}
+
+async function keysCmd(root, [sub, name]) {
+  needStudio(root);
+  if (sub === 'set' || sub === 'remove') {
+    if (!name) throw new Error(`mortiflix keys ${sub} <${Object.keys(keys.KEYS).join('|')}|NAME>`);
+    const id = keys.KEYS[name.toLowerCase()] ? name.toLowerCase() : null;
+    if (sub === 'remove') {
+      if (id) keys.saveKey(root, id, null); else keys.setSessionKey(root, name, null);
+      return console.log('Removed.');
+    }
+    if (id && process.stdin.isTTY) return askKey(root, id);
+    const value = (await hiddenPrompt(process.stdin.isTTY ? `${name} ${C.dim('(hidden)')}: ` : '')).trim();
+    if (!value) throw new Error('no key given');
+    if (!id) { keys.setSessionKey(root, name, value); return console.log(`${C.green('✔')} ${name} saved in session.env.`); }
+    const r = await keys.verifyKey(root, id, value);
+    if (r.ok === false) throw new Error(r.detail);
+    keys.saveKey(root, id, value);
+    if (r.tier) voice.saveVoice(root, { elevenlabs: { tier: r.tier } });
+    return console.log(`${C.green('✔')} ${keys.KEYS[id].name} saved${r.ok ? ` (${r.detail})` : `, but ${r.detail}`}.`);
+  }
+  if (sub) throw new Error('mortiflix keys [set|remove <name>]');
+  if (!process.stdin.isTTY) return showKeys(root);
+  return keysWalk(root);
+}
+
+// One visible line from the terminal (a fresh readline each time, so it can take turns with hiddenPrompt).
+async function prompterOnce(question) {
+  const rl = prompter();
+  try { return (await rl.question(question)) ?? ''; } catch { return ''; } finally { rl.close(); }
 }
 
 function checks(root, [action, id]) {
@@ -450,9 +547,7 @@ async function voiceCmd(root, [sub, ...words]) {
     if (sub === 'elevenlabs') {
       if (!voice.elevenKey(root)) {
         rl.close();
-        const key = (await hiddenPrompt('ElevenLabs API key (elevenlabs.io › Developers › API keys): ')).trim();
-        if (!key) throw new Error('no key given');
-        voice.setElevenKey(root, key);
+        if (!(await askKey(root, 'elevenlabs', { required: true }))) throw new Error('no key given');
         return voiceCmd(root, ['elevenlabs']);
       }
       const el = new voice.eleven.ElevenLabs({ key: voice.elevenKey(root), server: v.elevenlabs.server });
@@ -521,7 +616,7 @@ async function voiceTest(root, text) {
 
 // The walk-through: a logo sting made by the demo backend, so the whole loop can be tried for free.
 async function demo(root) {
-  if (!existsSync(paths(root).config)) init(root, {});
+  if (!existsSync(paths(root).config)) await init(root, { yes: true });
   const logo = join(paths(root).run, 'demo-logo.svg');
   writeFileSync(logo, '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><circle cx="100" cy="100" r="80" fill="#f97316"/><text x="100" y="118" text-anchor="middle" font-size="56" font-family="sans-serif" fill="#fff">M</text></svg>');
   const id = await newProject(root, 'logo-sting', { _: [], set: ['mood=calm and premium'], file: [`logo=${logo}`], title: 'Demo sting', backend: 'demo', yes: true });

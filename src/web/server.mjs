@@ -15,6 +15,7 @@ import { createProject, addIntakeFile, startProject, listProjects, loadProject, 
 import * as gates from '../gates.mjs';
 import { Runner, BACKENDS } from '../runner.mjs';
 import * as voice from '../voice/index.mjs';
+import * as keys from '../keys.mjs';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -104,6 +105,21 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       return after(studioInfo(root, runner));
     }
     if (p.startsWith('/voice')) return voiceApi(root, req, res, url, p, method, after);
+    // Keys: their status (never their values), and setting one (checked with a free call before it's saved).
+    if (p === '/keys' && method === 'GET') return send(res, 200, keysInfo(root));
+    if ((m = p.match(/^\/keys\/([A-Za-z][A-Za-z0-9_]*)$/)) && (method === 'PUT' || method === 'DELETE')) {
+      const id = keys.KEYS[m[1]] ? m[1] : null;
+      const value = method === 'PUT' ? String((await json(req)).value || '').trim() : '';
+      if (method === 'PUT' && !value) throw new BadRequest('paste a key');
+      let check = null;
+      if (id && value) {
+        check = await keys.verifyKey(root, id, value);
+        if (check.ok === false) throw new BadRequest(check.detail);
+        if (check.tier) voice.saveVoice(root, { elevenlabs: { tier: check.tier } });
+      }
+      if (id) keys.saveKey(root, id, value || null); else keys.setSessionKey(root, m[1], value || null);
+      return after({ ...keysInfo(root), check });
+    }
     if (p === '/pipelines' && method === 'GET') {
       return send(res, 200, listPipelines(root).map(({ dir, ...x }) => x));
     }
@@ -130,7 +146,12 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       const rel = await addIntakeFile(root, id, { field, name, stream: req });
       return after({ path: rel });
     }
-    if (sub === '/start' && method === 'POST') return after(startProject(root, id) && { ok: true });
+    if (sub === '/start' && method === 'POST') {
+      // Ask for the keys this project will need now, not halfway through it.
+      const missing = keys.projectMissingKeys(root, id);
+      if (missing.length) return send(res, 409, { error: keys.missingKeysText(missing, 'start it'), needs_keys: missing });
+      return after(startProject(root, id) && { ok: true });
+    }
     if (sub === '/pause' && method === 'POST') { gates.pause(root, id); runner.stopProject(id); return after(); }
     if (sub === '/resume' && method === 'POST') { gates.resume(root, id); return after(); }
     if (sub === '/cancel' && method === 'POST') { gates.cancel(root, id); runner.stopProject(id); return after(); }
@@ -307,6 +328,10 @@ function json(req, limit = 2_000_000) {
     req.on('end', () => { try { ok(body ? JSON.parse(body) : {}); } catch { fail(new BadRequest('bad JSON')); } });
     req.on('error', fail);
   });
+}
+
+function keysInfo(root) {
+  return { keys: keys.keyStatus(root), other: keys.sessionKeyNames(root) };
 }
 
 function studioInfo(root, runner) {

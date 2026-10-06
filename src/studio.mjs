@@ -2,8 +2,8 @@
 //
 //   <studio>/
 //     config.json          settings (backend, model, port...). No secrets.
-//     secrets.json         the Anthropic API key, if you gave one here (mode 600). Never served, never logged.
-//     session.env          extra keys handed to sessions (e.g. ELEVENLABS_API_KEY=...), mode 600
+//     secrets.json         your Anthropic and ElevenLabs keys (mode 600), set with `mortiflix keys`. Never served, never logged.
+//     session.env          other keys handed to every session (e.g. GEMINI_API_KEY=...), mode 600, also set with `mortiflix keys`
 //     checks.json          the studio's error checklist (grows from your feedback)
 //     pipelines/<slug>/    your own pipelines (override the built-in ones with the same slug)
 //     projects/<id>/       the session's working folder (it runs here)
@@ -55,7 +55,9 @@ export function paths(root) {
 
 export function ensureStudio(root) {
   const p = paths(root);
-  for (const d of [p.root, p.pipelines, p.projects, p.state, p.run]) mkdirSync(d, { recursive: true });
+  // A new studio is yours alone: it holds your keys and your clients' material.
+  if (!existsSync(p.root)) mkdirSync(p.root, { recursive: true, mode: 0o700 });
+  for (const d of [p.pipelines, p.projects, p.state, p.run]) mkdirSync(d, { recursive: true });
   if (!existsSync(p.config)) writeJson(p.config, { backend: DEFAULT_CONFIG.backend });
   if (!existsSync(p.checks)) writeJson(p.checks, { active: [], proposed: [] });
   return p;
@@ -99,6 +101,15 @@ export function readSessionEnv(root) {
     if (m) env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
   }
   return env;
+}
+
+export function writeSessionEnv(root, env) {
+  const p = paths(root).sessionEnv;
+  const lines = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+  const tmp = `${p}.${process.pid}.tmp`;
+  writeFileSync(tmp, lines.length ? `${lines.join('\n')}\n` : '', { mode: 0o600 });
+  chmodSync(tmp, 0o600);
+  renameSync(tmp, p);
 }
 
 // ---- small file helpers used everywhere ----

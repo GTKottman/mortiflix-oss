@@ -17,7 +17,7 @@ is made again, and the timings of every word go to the animation.
 ## ElevenLabs
 
 1. Get an API key: elevenlabs.io › Developers › API keys.
-2. Settings › Narration › ElevenLabs, paste it, **Connect**. You'll see your plan, credits left, when they reset,
+2. `mortiflix keys` (or Settings › Narration › ElevenLabs), paste it, **Connect**. You'll see your plan, credits left, when they reset,
    and whether you may use the audio commercially.
 3. **Choose a voice**: your voices and the default voices, or **Browse the Voice Library** (thousands of community
    voices; "Add & use" copies one into your account). ▶ plays each voice's own preview, free.

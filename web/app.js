@@ -34,13 +34,13 @@ async function api(path, { method = 'GET', body, raw } = {}) {
   else if (body !== undefined) { opts.body = JSON.stringify(body); opts.headers['content-type'] = 'application/json'; }
   const res = await fetch(path, opts);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status, data });
   return data;
 }
 
 function toast(text, bad = false) {
   const t = h('div', { class: `toast${bad ? ' bad' : ''}`, role: 'status' }, text);
-  document.add(body, t);
+  add(document.body, t);
   setTimeout(() => t.remove(), bad ? 6000 : 2600);
 }
 
@@ -511,7 +511,9 @@ async function newView(slug) {
   for (const q of p.intake) if (q.type === 'choice' && q.default) answers[q.id] = q.default;
   let title = '';
   let backend = null;
+  let createdId = null;
   const err = h('div', { class: 'err' });
+  const keysBox = h('div');
 
   const field = (label, control, { help, optional } = {}) => h('div', { class: 'field' }, h('label', null, label, optional ? h('div', { class: 'opt' }, 'optional') : null), h('div', null, control, help ? h('div', { class: 'help' }, help) : null));
   const fields = p.intake.map((q) => {
@@ -527,14 +529,28 @@ async function newView(slug) {
     err.textContent = '';
     startBtn.disabled = true;
     try {
-      const { id } = await api('/api/projects', { method: 'POST', body: { pipeline: slug, title, answers, backend } });
-      for (const [fieldId, list] of Object.entries(files)) {
-        for (const f of list) {
-          startBtn.textContent = `Uploading ${f.name}…`;
-          await api(`/api/projects/${id}/files?field=${encodeURIComponent(fieldId)}&name=${encodeURIComponent(f.name)}`, { method: 'POST', raw: f });
+      if (!createdId) {
+        const { id } = await api('/api/projects', { method: 'POST', body: { pipeline: slug, title, answers, backend } });
+        for (const [fieldId, list] of Object.entries(files)) {
+          for (const f of list) {
+            startBtn.textContent = `Uploading ${f.name}…`;
+            await api(`/api/projects/${id}/files?field=${encodeURIComponent(fieldId)}&name=${encodeURIComponent(f.name)}`, { method: 'POST', raw: f });
+          }
         }
+        createdId = id;
       }
-      await api(`/api/projects/${id}/start`, { method: 'POST' }).catch((e) => { location.hash = `#/p/${id}`; throw e; });
+      const id = createdId;
+      try {
+        await api(`/api/projects/${id}/start`, { method: 'POST' });
+      } catch (e) {
+        // Keys this project needs: ask for them right here, then Start again.
+        if (!e.data?.needs_keys) { location.hash = `#/p/${id}`; throw e; }
+        const { keys } = await api('/api/keys');
+        const drawKeys = (list) => fill(keysBox, h('section', null, h('h2', null, 'Before it starts'), h('p', { class: 'meta' }, e.message),
+          list.filter((k) => e.data.needs_keys.includes(k.id)).map((k) => keyRow(k, (r) => drawKeys(r.keys)))));
+        drawKeys(keys);
+        throw new Error('Add the key above, then Start.');
+      }
       location.hash = `#/p/${id}`;
     } catch (e) {
       err.textContent = e.message;
@@ -551,6 +567,7 @@ async function newView(slug) {
       fields,
       studio?.config.backend === 'demo' ? null
         : field('Made by', choiceChips([BACKEND_NAMES[studio?.config.backend] || 'Studio default', 'Demo (placeholder work, free)'], BACKEND_NAMES[studio?.config.backend] || 'Studio default', (v) => { backend = v.startsWith('Demo') ? 'demo' : null; }), { help: 'The demo walks every stage with placeholder work: handy to learn the review room.' })),
+    keysBox,
     h('div', { class: 'form-end' }, err, startBtn),
   );
 }
@@ -629,12 +646,64 @@ async function settingsView() {
         h('div', { class: 'main' }, h('span', { class: 'title' }, k.title), h('div', { class: 'meta', style: { whiteSpace: 'normal' } }, k.how)),
         h('div', { class: 'end' }, h('button', { class: 'btn', onclick: decideCheck(k.id, true) }, 'Add'), h('button', { class: 'btn link', onclick: decideCheck(k.id, false) }, 'Dismiss'))))) : null,
       checks.active.length ? h('ul', { class: 'rows' }, checks.active.map((k) => h('li', { class: 'row' }, icon('done'), h('div', { class: 'main' }, h('span', { class: 'title' }, k.title)), h('div', { class: 'end' }, (k.applies_to || []).join(', '))))) : h('p', { class: 'meta' }, 'No studio checks yet (each pipeline has its own).')),
-    h('section', null, h('h2', null, 'Keys for sessions'),
-      h('p', null, studio.session_env ? 'session.env is set: its keys are handed to every session.' : 'Optional. To give sessions other keys, put KEY=value lines in session.env in the studio folder. (Narration keys belong in Narration above.)'),
-      h('p', { class: 'meta' }, `Studio folder: ${studio.root}`)),
+    await keysSection(),
   );
   mount(h('div', { class: 'head' }, h('h1', null, 'Settings')), body);
   draw();
+}
+
+// ---------- keys (Settings › Keys, and New video when one is missing) ----------
+
+const KEY_SOURCES = { saved: 'saved in this studio', 'session.env': 'from session.env', environment: 'from your environment' };
+
+// One key: where it comes from (never its value) and a hidden field to set it. The server checks it with a free call
+// before saving it.
+function keyRow(k, onChange) {
+  const input = h('input', { type: 'password', autocomplete: 'off', 'aria-label': k.name, placeholder: k.source === 'saved' ? 'Saved (paste to replace)' : k.source ? `Using ${k.env} ${KEY_SOURCES[k.source]}` : 'Paste your key' });
+  const note = h('div', { class: 'help' }, `For ${k.for} Get one at ${k.get}.`);
+  const save = h('button', { class: 'btn', onclick: async () => {
+    if (!input.value.trim()) return input.focus();
+    save.disabled = true;
+    save.textContent = 'Checking…';
+    try {
+      const r = await api(`/api/keys/${k.id}`, { method: 'PUT', body: { value: input.value } });
+      input.value = '';
+      toast(r.check?.ok ? `${k.name}: ${r.check.detail}` : `${k.name} saved${r.check ? `, but ${r.check.detail}` : ''}`);
+      onChange(r);
+    } catch (e) {
+      fill(note, h('span', { class: 'err' }, e.message));
+      save.disabled = false;
+      save.textContent = 'Save';
+    }
+  } }, 'Save');
+  const remove = k.source === 'saved' ? h('button', { class: 'btn link', onclick: async () => { try { onChange(await api(`/api/keys/${k.id}`, { method: 'DELETE' })); } catch (e) { toast(e.message, true); } } }, 'Remove') : null;
+  const chip = h('span', { class: `chip ${k.source ? 'ok' : k.in_use ? 'bad' : ''}` }, k.source ? KEY_SOURCES[k.source] : k.in_use ? 'needed' : 'not set');
+  return h('div', { class: 'field' }, h('label', null, k.name, h('div', null, chip)), h('div', null, h('div', { class: 'actions' }, input, save, remove), note));
+}
+
+async function keysSection() {
+  const wrap = h('section', { id: 'keys' });
+  const draw = ({ keys, other }) => {
+    let name = '';
+    let value = '';
+    const addOther = async () => {
+      try { draw(await api(`/api/keys/${encodeURIComponent(name.trim().toUpperCase())}`, { method: 'PUT', body: { value } })); } catch (e) { toast(e.message, true); }
+    };
+    fill(wrap, h('h2', null, 'Keys'),
+      h('p', { class: 'meta' }, 'Mortiflix runs on your own accounts. Keys stay in the studio folder (secrets.json and session.env, readable by you alone) and are never shown again.'),
+      keys.map((k) => keyRow(k, draw)),
+      h('div', { class: 'field' }, h('label', null, 'Other keys', h('div', { class: 'opt' }, 'handed to every session')),
+        h('div', null,
+          other.length ? h('div', { class: 'actions' }, other.map((n) => h('span', { class: 'chip' }, n, h('button', { class: 'btn link', 'aria-label': `Remove ${n}`, onclick: async () => { try { draw(await api(`/api/keys/${n}`, { method: 'DELETE' })); } catch (e) { toast(e.message, true); } } }, '×')))) : null,
+          h('div', { class: 'actions', style: { marginTop: other.length ? '10px' : '0' } },
+            h('input', { type: 'text', placeholder: 'NAME, e.g. GEMINI_API_KEY', 'aria-label': 'Key name', oninput: (e) => { name = e.target.value; }, style: { maxWidth: '240px' } }),
+            h('input', { type: 'password', autocomplete: 'off', placeholder: 'value', 'aria-label': 'Key value', oninput: (e) => { value = e.target.value; } }),
+            h('button', { class: 'btn', onclick: addOther }, 'Add')),
+          h('div', { class: 'help' }, 'For tools a pipeline uses that read a key from the environment.'))),
+      h('p', { class: 'meta' }, `Studio folder: ${studio.root}`));
+  };
+  draw(await api('/api/keys'));
+  return wrap;
 }
 
 // ---------- narration (Settings › Voice) ----------

@@ -6,7 +6,8 @@ import { join } from 'node:path';
 import { REPO, paths, loadConfig, readSessionEnv } from './studio.mjs';
 import { sessionVoiceEnv } from './voice/index.mjs';
 import { listProjects, loadProject, projectPaths, projectPipeline, update, event, readEvents, now } from './projects.mjs';
-import { settle } from './gates.mjs';
+import { settle, needsYou } from './gates.mjs';
+import { projectMissingKeys, missingKeysText } from './keys.mjs';
 import { prepareWorkdir, writeTorch, sessionReason } from './torch.mjs';
 import { openBridge } from './bridge.mjs';
 import { RenderQueue } from './renderq.mjs';
@@ -96,6 +97,14 @@ export class Runner extends EventEmitter {
 
   async runSession(projectId) {
     const root = this.root;
+    // A key the next steps need is missing: ask for it now, rather than let a session fail halfway through.
+    const missing = projectMissingKeys(root, projectId, { upcoming: true });
+    if (missing.length) {
+      needsYou(root, projectId, missingKeysText(missing));
+      this.log(`‖ ${projectId}: needs a key (${missing.join(', ')})`);
+      this.emit('change');
+      return;
+    }
     const config = loadConfig(root);
     // A project can pin its own backend (the demo project does); otherwise the studio's setting.
     const backendName = loadProject(root, projectId).backend || config.backend;
