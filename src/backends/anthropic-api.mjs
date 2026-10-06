@@ -280,6 +280,8 @@ export function editorTool(work, input, onActivity = () => {}) {
 // Resolve a model-supplied path and refuse anything outside the project folder (.., absolute paths, symlinks).
 export function confine(work, path, creating = false) {
   if (typeof path !== 'string' || !path) throw new Error('path is required');
+  // macOS keeps temp folders behind symlinks (/var -> /private/var): compare against the real project folder.
+  if (existsSync(work)) work = realpathSync(work);
   const abs = resolve(work, path);
   let probe = abs;
   if (creating) while (!existsSync(probe)) probe = dirname(probe);
