@@ -130,6 +130,7 @@ makes it, it can be a pipeline.
 
 ## How it works
 
+- [OVERVIEW.html](OVERVIEW.html): the whole project on one page, with UML diagrams (download it and open it in a browser)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the runner, the bridge (`mfx`), the gates, the session brief, the backends
 - [docs/PIPELINES.md](docs/PIPELINES.md): the pipeline format and how to write a good one
 - [harness/GATES.md](harness/GATES.md): the protocol every session follows

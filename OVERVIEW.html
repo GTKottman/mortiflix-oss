@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mortiflix: Project Overview</title>
+<meta name="description" content="The whole Mortiflix project on one page: what it is, how a video gets made, every module, and UML diagrams of its structure and behaviour.">
+<link rel="icon" href="web/img/mark.png">
+<style>
+@font-face { font-family: "Sora"; src: url("web/fonts/sora-latin-wght.woff2") format("woff2"); font-weight: 100 800; font-display: swap; }
+@font-face { font-family: "Unbounded"; src: url("web/fonts/unbounded-latin-wght.woff2") format("woff2"); font-weight: 200 900; font-display: swap; }
+:root {
+  --bg: #0b0913; --raise: #15111f; --ink: #f5f2ff; --body: #c9c4d8; --muted: #8d87a0; --faint: #5d576e;
+  --line: rgba(255, 255, 255, 0.09); --accent: #b18cff; --accent-ink: #120c22; --link: #8fb5ff;
+  --ok: #7fe0a8; --warn: #ffb27a; --bad: #ff8f9a; --pin: #ff8fd1;
+  --display: "Unbounded", "Sora", system-ui, sans-serif; --text: "Sora", system-ui, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; --measure: 1240px;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #faf9fc; --raise: #ffffff; --ink: #17121f; --body: #3b3549; --muted: #6c667c; --faint: #a39eb2;
+    --line: rgba(20, 10, 40, 0.1); --accent: #7a4dff; --accent-ink: #ffffff; --link: #1d4ed8;
+    --ok: #12804a; --warn: #a3520b; --bad: #b4232f; --pin: #d0287f; color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #faf9fc; --raise: #ffffff; --ink: #17121f; --body: #3b3549; --muted: #6c667c; --faint: #a39eb2;
+  --line: rgba(20, 10, 40, 0.1); --accent: #7a4dff; --accent-ink: #ffffff; --link: #1d4ed8;
+  --ok: #12804a; --warn: #a3520b; --bad: #b4232f; --pin: #d0287f; color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+body { margin: 0; background: var(--bg); color: var(--body); font: 15px/1.65 var(--text); -webkit-font-smoothing: antialiased; }
+a { color: var(--link); }
+h1, h2, h3 { color: var(--ink); font-family: var(--display); font-weight: 500; letter-spacing: -0.01em; }
+h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.1; margin: 0 0 14px; }
+h2 { font-size: 22px; margin: 0 0 6px; }
+h3 { font-size: 15px; font-family: var(--text); font-weight: 650; margin: 28px 0 8px; }
+p { margin: 0 0 14px; max-width: 72ch; }
+code { font-family: var(--mono); font-size: 0.88em; color: var(--ink); }
+.wrap { max-width: var(--measure); margin: 0 auto; padding: 0 24px; }
+
+/* header */
+header.hero { border-bottom: 1px solid var(--line); padding: 56px 0 40px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; color: var(--muted); font-size: 13px; }
+.brand img { width: 34px; height: 34px; border-radius: 8px; }
+.brand b { color: var(--ink); font-family: var(--display); font-weight: 600; font-size: 16px; }
+.lede { font-size: 18px; color: var(--body); max-width: 62ch; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-top: 32px; border-top: 1px solid var(--line); }
+.facts div { padding: 16px 16px 0 0; }
+.facts b { display: block; font-family: var(--display); font-weight: 500; font-size: 24px; color: var(--ink); }
+.facts span { font-size: 12px; color: var(--muted); }
+
+/* layout with table of contents */
+.layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 48px; padding-top: 40px; }
+nav.toc { position: sticky; top: 24px; align-self: start; font-size: 13px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+nav.toc li { counter-increment: s; }
+nav.toc a { display: block; padding: 4px 0; color: var(--muted); text-decoration: none; }
+nav.toc a::before { content: counter(s, decimal-leading-zero) "  "; color: var(--faint); font-family: var(--mono); font-size: 11px; }
+nav.toc a:hover, nav.toc a.on { color: var(--ink); }
+section { padding: 0 0 48px; margin-bottom: 48px; border-bottom: 1px solid var(--line); }
+section:last-of-type { border-bottom: 0; }
+.kicker { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin-bottom: 6px; }
+
+/* diagrams */
+figure { margin: 22px 0 6px; }
+.diagram { background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 20px; overflow-x: auto; }
+.diagram .mermaid { display: flex; justify-content: center; min-width: min-content; }
+.diagram svg { max-width: none !important; height: auto; } /* natural size: diagram text stays legible; the box scrolls if needed */
+figcaption { display: flex; gap: 10px; align-items: baseline; font-size: 12px; color: var(--muted); margin-top: 8px; }
+figcaption .uml { font-family: var(--mono); font-size: 11px; color: var(--accent); white-space: nowrap; }
+.mermaid:not([data-processed]) { color: transparent; font-size: 0; min-height: 80px; }
+.fallback { display: none; font-size: 13px; color: var(--warn); }
+.no-mermaid .fallback { display: block; }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 14px 0 4px; }
+th { text-align: left; font-weight: 600; color: var(--ink); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+th, td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+td:first-child { white-space: nowrap; }
+td.n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.tag { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 10px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.tag.you { border-color: var(--pin); color: var(--pin); }
+
+.rule { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.rule:last-child { border-bottom: 0; }
+.rule i { font-style: normal; color: var(--accent); font-family: var(--mono); font-size: 12px; padding-top: 2px; }
+.rule b { color: var(--ink); font-weight: 600; }
+
+pre { background: var(--raise); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; overflow-x: auto; color: var(--body); line-height: 1.55; }
+footer { border-top: 1px solid var(--line); padding: 28px 0 48px; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  nav.toc { position: static; border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 32px; }
+  nav.toc ol { columns: 2; }
+  .wrap { padding: 0 16px; }
+  header.hero { padding-top: 36px; }
+  td:first-child { white-space: normal; }
+}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <div class="brand"><img src="web/img/mark.png" alt=""><b>Mortiflix</b> · project overview</div>
+    <h1>A motion design studio on your own machine</h1>
+    <p class="lede">Claude makes the video one stage at a time (brief, script, style frames, animatic, final) and you approve every stage. This page covers the whole project on one page: what it does, how one video moves through it, every module, and UML diagrams of the structure and the behaviour.</p>
+    <div class="facts">
+      <div><b>~4.6k</b><span>lines of JavaScript (src + web)</span></div>
+      <div><b>1</b><span>runtime dependency (@anthropic-ai/sdk)</span></div>
+      <div><b>3</b><span>backends: Claude Code, API, demo</span></div>
+      <div><b>3</b><span>pipelines: explainer, short, logo sting</span></div>
+      <div><b>25</b><span>tests, all passing in ~2 s</span></div>
+      <div><b>AGPL-3.0</b><span>license, Node ≥ 20</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap layout">
+  <nav class="toc" aria-label="Contents">
+    <ol>
+      <li><a href="#idea">The idea</a></li>
+      <li><a href="#context">Who does what</a></li>
+      <li><a href="#components">Components</a></li>
+      <li><a href="#deployment">Deployment</a></li>
+      <li><a href="#studio">The studio folder</a></li>
+      <li><a href="#classes">Classes &amp; data</a></li>
+      <li><a href="#states">State machines</a></li>
+      <li><a href="#session">A session</a></li>
+      <li><a href="#review">A review round</a></li>
+      <li><a href="#gates">The gates</a></li>
+      <li><a href="#renders">Renders</a></li>
+      <li><a href="#pipelines">Pipelines</a></li>
+      <li><a href="#backends">Backends</a></li>
+      <li><a href="#voice">Narration</a></li>
+      <li><a href="#interfaces">CLI, web &amp; mfx</a></li>
+      <li><a href="#security">Security</a></li>
+      <li><a href="#compute">Compute</a></li>
+      <li><a href="#modules">Module reference</a></li>
+      <li><a href="#extend">Extending it</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section id="idea">
+      <div class="kicker">Overview</div>
+      <h2>The idea</h2>
+      <p>Most AI video tools take one prompt and return one result. Mortiflix works like a real studio instead: the work moves through stages, and <b>a Claude session stops at every gate</b>. It submits what it made, writes a handoff and ends. When you respond (approve, pin notes on a frame or a moment, answer questions), a fresh session picks up from the journal. Waiting on you costs nothing, for hours or for days.</p>
+      <p>Three ideas carry the design:</p>
+      <div class="rule"><i>01</i><div><b>The rules live in code, not in the prompt.</b> Only you can approve a reviewed step. A submission is refused unless it reports every error check and answers every note on the last version. What you reviewed is copied out of the session's reach.</div></div>
+      <div class="rule"><i>02</i><div><b>It learns your studio.</b> When you point out a real mistake, the session proposes a new error check. Approve it once and every future video runs it. Your taste carries across projects in <code>TASTE.md</code>.</div></div>
+      <div class="rule"><i>03</i><div><b>Pipelines are folders.</b> A <code>pipeline.json</code> (steps, review modes, checks), a <code>PIPELINE.md</code> (the craft) and skills. Anyone can write one.</div></div>
+    </section>
+
+    <section id="context">
+      <div class="kicker">Use cases</div>
+      <h2>Who does what</h2>
+      <p>One person owns the studio: they write briefs and review every stage. Sessions (Claude) do the work and can only reach the studio through <code>mfx</code>. The studio process enforces the rules between them.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+flowchart LR
+  owner(["👤 Owner"])
+  claude(["🤖 Claude session"])
+  subgraph studio ["Mortiflix studio"]
+    direction TB
+    uc1(["Write a brief / start a project"])
+    uc2(["Review a step: approve or ask for changes"])
+    uc3(["Pin notes on frames, moments, paragraphs"])
+    uc4(["Answer questions"])
+    uc5(["Approve proposed error checks"])
+    uc6(["Pause · resume · cancel"])
+    uc7(["Do the step's work"])
+    uc8(["Report status and progress"])
+    uc9(["Submit at a gate (with checks)"])
+    uc10(["Ask a question · propose a check"])
+    uc11(["Queue a render"])
+    uc12(["Hand off and stop"])
+  end
+  owner --- uc1 & uc2 & uc3 & uc4 & uc5 & uc6
+  claude --- uc7 & uc8 & uc9 & uc10 & uc11 & uc12
+        </pre><p class="fallback">Diagrams need the Mermaid library from cdn.jsdelivr.net (open this page online).</p></div>
+        <figcaption><span class="uml">UML · use case</span>The owner's actions only exist in the web API and the CLI; the session's only exist through <code>mfx</code>.</figcaption>
+      </figure>
+    </section>
+
+    <section id="components">
+      <div class="kicker">Structure</div>
+      <h2>Components</h2>
+      <p>One Node process (<code>mortiflix serve</code> or <code>mortiflix run</code>) built around one folder, the studio. Two front doors for you (the CLI and the web studio) and one for the session (<code>mfx</code> over a private Unix socket). All of them end in <code>gates.mjs</code>, the only code that changes a project's record.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+flowchart TB
+  subgraph you ["For you"]
+    cli["cli.mjs<br/>bin/mortiflix"]
+    web["web/server.mjs<br/>+ web/app.js"]
+  end
+  subgraph sess ["For the session"]
+    mfx["mfx.mjs<br/>bin/mfx"]
+    bridge["bridge.mjs<br/>Unix socket, per-session token"]
+  end
+  subgraph core ["Core"]
+    gates["gates.mjs<br/>every rule"]
+    projects["projects.mjs<br/>record, events, journal"]
+    pipelines["pipelines.mjs<br/>load · validate · snapshot"]
+    studio["studio.mjs<br/>paths, config, secrets, locks"]
+  end
+  subgraph run ["Running sessions"]
+    runner["runner.mjs<br/>Runner"]
+    torch["torch.mjs<br/>workdir + CLAUDE.md"]
+    renderq["renderq.mjs<br/>RenderQueue"]
+    subgraph backends ["backends/"]
+      cc["claude-code"]
+      api["anthropic-api"]
+      demo["demo"]
+    end
+  end
+  voice["voice/<br/>index · elevenlabs · qwen"]
+
+  cli & web --> gates
+  cli & web --> runner
+  cli & web --> voice
+  mfx -- "JSON over socket" --> bridge
+  bridge --> gates
+  bridge --> renderq
+  runner --> torch
+  runner --> bridge
+  runner --> renderq
+  runner --> backends
+  runner -- "settle()" --> gates
+  demo -. "drives, like a session" .-> mfx
+  gates --> projects --> pipelines
+        </pre></div>
+        <figcaption><span class="uml">UML · component</span>Arrows are the main calls; every module reads paths, config and locks through <code>studio.mjs</code> (not drawn). The demo backend drives the real bridge through <code>mfx</code>, exactly like a session would.</figcaption>
+      </figure>
+    </section>
+
+    <section id="deployment">
+      <div class="kicker">Runtime</div>
+      <h2>Deployment</h2>
+      <p>Everything runs on one machine. The studio process starts sessions as child processes (Claude Code) or runs its own agent loop against the Claude API, and starts renders (Remotion, ffmpeg, Chrome) one at a time.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+flowchart LR
+  subgraph machine ["Your computer"]
+    subgraph node ["Node process: mortiflix serve"]
+      srv["Web server :4646<br/>JSON API + SSE"]
+      rn["Runner"]
+      rq["RenderQueue"]
+      br["Bridge<br/>(per session)"]
+    end
+    browser["Browser<br/>web studio"]
+    sock[("Unix socket<br/>OS temp dir")]
+    claudecli["claude -p<br/>(optional bubblewrap sandbox)"]
+    tools["Remotion · ffmpeg · Chrome"]
+    comfy["ComfyUI + Qwen3-TTS<br/>(optional, GPU)"]
+    fs[("Studio folder<br/>~/Mortiflix")]
+  end
+  anth["Anthropic API"]
+  eleven["ElevenLabs API<br/>(optional)"]
+
+  browser -- "HTTP + SSE" --> srv
+  rn -- "spawns" --> claudecli
+  claudecli -- "mfx" --> sock --> br
+  rn -- "agent loop (API backend)" --> anth
+  claudecli --> anth
+  rq -- "spawns, one at a time" --> tools
+  claudecli -. "vo.mjs" .-> eleven & comfy
+  node --- fs
+        </pre></div>
+        <figcaption><span class="uml">UML · deployment</span>Remote access (<code>--host 0.0.0.0</code>) adds an access-token cookie; by default it binds to 127.0.0.1.</figcaption>
+      </figure>
+    </section>
+
+    <section id="studio">
+      <div class="kicker">Storage</div>
+      <h2>The studio folder</h2>
+      <p>The split that matters: <b>sessions write to <code>projects/&lt;id&gt;/</code>; only Mortiflix writes to <code>state/&lt;id&gt;/</code>.</b> A submission's files are copied into the record when submitted, so what you reviewed can't change afterwards.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+flowchart LR
+  root["~/Mortiflix  ($MORTIFLIX_STUDIO)"]
+  root --> cfg["config.json<br/>settings, no secrets"]
+  root --> sec["secrets.json (mode 600)<br/>API key, web token"]
+  root --> env["session.env<br/>keys handed to sessions"]
+  root --> chk["checks.json<br/>the studio's error checklist"]
+  root --> taste["TASTE.md<br/>learned across projects"]
+  root --> pl["pipelines/<br/>your own (override built-ins)"]
+  root --> projects["projects/‹id›/<br/>working folder · session cwd"]
+  root --> state["state/‹id›/<br/>the record"]
+  root --> runf["run/<br/>runner lock, render logs, shared Remotion install"]
+  projects --> w1["CLAUDE.md · JOURNAL.md · checklist.md"]
+  projects --> w2["pipeline/ · .claude/skills/ · .mortiflix/GATES.md"]
+  projects --> w3["input/ · feedback/ · out/ · video/"]
+  state --> s1["project.json · events.jsonl"]
+  state --> s2["pipeline/  (pinned snapshot)"]
+  state --> s3["reviews/‹step›/v‹n›/  submission + copied files + feedback"]
+  state --> s4["sessions/*.jsonl  transcripts + activity"]
+  classDef rec stroke:#b18cff,stroke-width:2px;
+  class state,s1,s2,s3,s4 rec;
+        </pre></div>
+        <figcaption><span class="uml">UML · package</span>Highlighted: the record, written only by the studio process.</figcaption>
+      </figure>
+    </section>
+
+    <section id="classes">
+      <div class="kicker">Structure</div>
+      <h2>Classes &amp; data</h2>
+      <p>The code is mostly functions over plain JSON records. The few real classes are the long-lived ones (Runner, RenderQueue, the API backend's Shell, the voice clients). Backends share one informal interface.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+classDiagram
+  direction LR
+  class Runner {
+    +root
+    +renders: RenderQueue
+    +current
+    +loop(watch, pollMs)
+    +runSession(projectId)
+    +stopProject(id)
+    +stop()
+    emits change, activity
+  }
+  class RenderQueue {
+    -jobs: Map
+    -order: id[]
+    +add(projectId, sessionId, label, argv, cwd, env) id
+    +wait(id, projectId, seconds) view
+    +get(id, projectId) view
+    +stopSession(sessionId)
+    -pump()
+  }
+  class Backend {
+    &lt;&lt;interface&gt;&gt;
+    +name
+    +available(config, root) bool
+    +run(root, projectId, workdir, prompt, env, transcript, onActivity, signal, config) Result
+  }
+  class ClaudeCode {
+    +sandboxArgs()
+    +describeTool()
+  }
+  class AnthropicApi {
+    +DEFAULT_MODEL
+    +credentials(root)
+    +editorTool()
+    +confine()
+  }
+  class Demo
+  class Shell {
+    +run(command, timeout)
+    +restart()
+  }
+  class UserError
+  class GateError
+  class ElevenLabs {
+    +account() models() voices()
+    +library() dictionaries()
+    +speak(text)
+  }
+  class ComfyUI {
+    +nodes() status()
+    +queue(graph)
+  }
+  Backend <|.. ClaudeCode
+  Backend <|.. AnthropicApi
+  Backend <|.. Demo
+  AnthropicApi *-- Shell
+  Runner *-- RenderQueue
+  Runner ..> Backend : runs one session at a time
+  UserError <|-- GateError
+  Error <|-- UserError
+        </pre></div>
+        <figcaption><span class="uml">UML · class</span>Behavioural classes. A refusal is a <code>GateError</code>: a plain sentence the session can act on.</figcaption>
+      </figure>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+classDiagram
+  direction LR
+  class Project {
+    id
+    title
+    pipeline (slug)
+    backend?
+    state
+    answers
+    steps: Map~key, StepRecord~
+    questions: Question[]
+    needs_you?
+    no_progress
+    without_gate
+    usage
+  }
+  class StepRecord {
+    state
+    version
+    last_feedback
+  }
+  class Pipeline {
+    slug
+    name
+    makes
+    shared_skills[]
+    intake: IntakeField[]
+    steps: PipelineStep[]
+    status_lines
+    checks: Check[]
+  }
+  class PipelineStep {
+    key
+    name
+    review
+    work[]
+    after[]
+    delivers
+  }
+  class Check {
+    id
+    title
+    applies_to[]
+    how
+  }
+  class Submission {
+    note
+    questions[]
+    items[]
+    error_checks[]
+    pin_changes[]
+  }
+  class Feedback {
+    verdict: approve|changes
+    overall
+    notes[]
+    answers
+  }
+  class Note {
+    text
+    item?
+    x?, y?
+    time_sec?
+    paragraph?
+  }
+  class Question {
+    id
+    text
+    choices?
+    default?
+    answered_at?
+  }
+  Project "1" --> "1" Pipeline : pinned snapshot
+  Project "1" *-- "*" StepRecord
+  Project "1" *-- "*" Question
+  Pipeline "1" *-- "1..*" PipelineStep
+  Pipeline "1" *-- "*" Check
+  StepRecord "1" --> "*" Submission : versions v1..vn
+  Submission "1" --> "0..1" Feedback
+  Feedback "1" *-- "*" Note
+  Submission ..> Note : pin_changes answers each
+        </pre></div>
+        <figcaption><span class="uml">UML · class (data)</span>The JSON records in <code>state/&lt;id&gt;/</code> and <code>pipeline.json</code>.</figcaption>
+      </figure>
+    </section>
+
+    <section id="states">
+      <div class="kicker">Behaviour</div>
+      <h2>State machines</h2>
+      <p>A project's state is recomputed from its steps after every change (<code>settle()</code>): <i>queued</i> when there's work the studio can do, <i>waiting</i> when it's your turn, <i>delivered</i> when every step is finished. Pause and cancel are yours; two sessions in a row without progress pause it automatically.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+stateDiagram-v2
+  [*] --> draft : createProject
+  draft --> queued : startProject (required intake answered)
+  queued --> waiting : settle - a step is in review or a question is open
+  waiting --> queued : you approve / ask for changes / answer
+  queued --> delivered : settle - every step finished
+  queued --> paused : no progress twice, 8 sessions without a gate, needs-you
+  queued --> paused : you pause
+  waiting --> paused : you pause
+  paused --> queued : you resume
+  draft --> cancelled : you cancel
+  queued --> cancelled : you cancel
+  waiting --> cancelled : you cancel
+  paused --> cancelled : you cancel
+  delivered --> [*]
+  cancelled --> [*]
+        </pre></div>
+        <figcaption><span class="uml">UML · state machine</span>Project (<code>projects.STATES</code>, <code>gates.settle</code>, runner guards).</figcaption>
+      </figure>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+stateDiagram-v2
+  [*] --> blocked
+  blocked --> ready : every step in "after" is finished
+  ready --> working : mfx step start / first work
+  working --> in_review : mfx submit (reviewed step)
+  ready --> in_review : mfx submit
+  in_review --> approved : you approve
+  in_review --> changes : you ask for changes
+  changes --> in_review : next version, every note answered
+  working --> done : mfx step done --checks (internal step)
+  approved --> [*]
+  done --> [*]
+  note right of blocked : derived states (blocked, ready) are computed by stepView; the rest are stored
+        </pre></div>
+        <figcaption><span class="uml">UML · state machine</span>Step. Steps with no dependency path between them run side by side (the explainer's script and style frames).</figcaption>
+      </figure>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+stateDiagram-v2
+  [*] --> waiting : mfx render
+  waiting --> running : pump() - nothing else running
+  running --> done : exit 0
+  running --> failed : exit ≠ 0
+  waiting --> failed : session ended
+  running --> failed : session ended (SIGTERM to the group)
+  done --> [*]
+  failed --> [*]
+        </pre></div>
+        <figcaption><span class="uml">UML · state machine</span>Render job. One render runs at a time across the whole studio.</figcaption>
+      </figure>
+    </section>
+
+    <section id="session">
+      <div class="kicker">Behaviour</div>
+      <h2>One session, start to finish</h2>
+      <p>The runner takes the oldest <i>queued</i> project, one session at a time (a <code>run/runner.pid</code> lock means <code>serve</code> and <code>run</code> never overlap). The session is told only to read <code>CLAUDE.md</code>, which <code>torch.mjs</code> writes fresh each time: where things stand, the steps table, what you said, the error checks, the brief (fenced as data), your taste and the journal.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant R as Runner
+  participant T as torch.mjs
+  participant B as Bridge
+  participant K as Backend
+  participant S as Claude session
+  participant M as mfx
+  participant G as gates.mjs
+  R->>R: next queued project<br/>(oldest queued_at)
+  R->>T: prepareWorkdir<br/>(pinned pipeline, skills, GATES.md)
+  R->>T: writeTorch → CLAUDE.md
+  R->>B: openBridge (Unix socket + token)
+  R->>K: run(prompt "Read ./CLAUDE.md…",<br/>env MFX_SOCKET / MFX_TOKEN)
+  K->>S: start<br/>(claude -p or the API agent loop)
+  loop until it reaches a gate
+    S->>M: mfx status / checks / render …
+    M->>B: POST {command, args, token}
+    B->>G: same function, same rules
+    G-->>S: result, or a refusal<br/>as a plain sentence
+  end
+  S->>M: mfx submit step submission.json
+  M->>B: submit
+  B->>G: submit(): validate,<br/>copy files into state/
+  S->>M: mfx handoff "…"
+  S-->>K: ends its turn
+  K-->>R: {ok, usage, cost_usd}
+  R->>R: stop leftover renders,<br/>close bridge
+  R->>G: settle() →<br/>waiting · queued · delivered
+  R-->>R: guards: pause after 2 no-progress<br/>sessions or 8 without a gate
+        </pre></div>
+        <figcaption><span class="uml">UML · sequence</span><code>Runner.runSession()</code>. A session past <code>maxSessionMinutes</code> is stopped; the next one resumes from the handoff.</figcaption>
+      </figure>
+    </section>
+
+    <section id="review">
+      <div class="kicker">Behaviour</div>
+      <h2>A review round</h2>
+      <p>You review in the web studio or with <code>mortiflix review</code>. Notes can point at an item, a spot on a picture, a moment in a video or a paragraph. The next version must answer each note in <code>pin_changes</code>, or it's refused.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  autonumber
+  actor O as Owner
+  participant W as Web studio / CLI
+  participant G as gates.mjs
+  participant FS as Studio folder
+  participant R as Runner
+  participant S as Next session
+  O->>W: pin notes (frame x,y · moment · paragraph)<br/>verdict "changes"
+  W->>G: respond(step, version,<br/>{verdict, overall, notes, answers})
+  G->>G: step must be in_review at that version,<br/>notes must point at real items
+  G->>FS: state/…/feedback.json<br/>projects/…/feedback/step-vN.json
+  G->>G: step → changes, settle → queued
+  G-->>W: SSE "change"
+  R->>S: new session<br/>(CLAUDE.md summarizes the notes)
+  S->>S: sort each note:<br/>error or taste, fix both
+  opt an error no check would have caught
+    S->>G: mfx propose-check<br/>(approved once, every future video runs it)
+  end
+  S->>G: mfx submit v(N+1)<br/>pin_changes: one entry per note
+  G-->>O: back in review,<br/>with what changed per note
+        </pre></div>
+        <figcaption><span class="uml">UML · sequence</span><code>gates.respond()</code> is reachable only from the web API and the CLI, never from <code>mfx</code>.</figcaption>
+      </figure>
+    </section>
+
+    <section id="gates">
+      <div class="kicker">The rules</div>
+      <h2>The gates</h2>
+      <p>Every rule is enforced by <code>src/gates.mjs</code> in the studio process. A refusal returns a sentence the session can act on, for example <i>"pin_changes: note 2 from directions v1 has no answer"</i>.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+flowchart TB
+  start(["mfx submit step submission.json"]) --> internal{"step is internal?"}
+  internal -- yes --> r1["refuse: use mfx step done --checks"]
+  internal -- no --> note{"has a note?"}
+  note -- no --> r2["refuse"]
+  note -- yes --> qs{"questions valid?<br/>text, unique ids, default ∈ choices"}
+  qs -- no --> r3["refuse"]
+  qs -- yes --> items{"every item: exists, a file,<br/>inside the project (symlinks resolved)?"}
+  items -- no --> r4["refuse"]
+  items -- yes --> mode{"review mode satisfied?<br/>frames→images · video→video · document→text"}
+  mode -- no --> r5["refuse"]
+  mode -- yes --> checks{"every check for the step's work<br/>reported? fixed / n/a have a note?"}
+  checks -- no --> r6["refuse"]
+  checks -- yes --> lock["under the project lock"]
+  lock --> st{"step state ok?<br/>not blocked, not in review, not approved"}
+  st -- no --> r7["refuse"]
+  st -- yes --> pins{"last version had notes?<br/>one pin_changes entry each, with a change and a status"}
+  pins -- no --> r8["refuse"]
+  pins -- yes --> copy["copy files into state/…/reviews/step/vN/<br/>write submission.json"]
+  copy --> done(["step → in_review · event SUBMITTED · settle"])
+        </pre></div>
+        <figcaption><span class="uml">UML · activity</span><code>gates.submit()</code>, in the order the checks run.</figcaption>
+      </figure>
+      <table>
+        <thead><tr><th>Rule</th><th>Where</th></tr></thead>
+        <tbody>
+          <tr><td>Only you approve a reviewed step</td><td><code>respond()</code>: web API and CLI only</td></tr>
+          <tr><td>Internal steps finish only with their checks</td><td><code>stepDone()</code></td></tr>
+          <tr><td>Every check for the step's kind of work is reported</td><td><code>validateChecks()</code></td></tr>
+          <tr><td>Every note on the last version gets an answer</td><td><code>submit()</code> → <code>pin_changes</code></td></tr>
+          <tr><td>Submitted files exist, are inside the project, and are copied</td><td><code>submit()</code></td></tr>
+          <tr><td>A step can't start before the steps it runs after</td><td><code>stepView()</code>, <code>submit()</code>, <code>stepStart()</code></td></tr>
+          <tr><td>Status lines come from the pipeline's whitelist</td><td><code>status()</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="renders">
+      <div class="kicker">Behaviour</div>
+      <h2>Renders</h2>
+      <p>Heavy work (Remotion, anything that starts Chrome or the GPU) goes through <code>mfx render</code>. It queues the job studio-wide and returns an id at once; <code>mfx render-wait</code> waits up to a timeout. No tool call blocks longer than a backend allows, and two renders never fight for memory.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+sequenceDiagram
+  participant S as Session
+  participant B as Bridge
+  participant Q as RenderQueue
+  participant P as Remotion / ffmpeg
+  S->>B: mfx render --label "animatic"<br/>-- npx remotion render …
+  B->>Q: add(job)
+  Q-->>S: {id: 3, state: waiting, renders_ahead: 1}
+  Q->>Q: pump(): previous job finished
+  Q->>P: spawn (own process group, log file)
+  S->>B: mfx render-wait 3
+  B->>Q: wait(3, 100 s)
+  P-->>Q: exit 0
+  Q-->>S: {state: done, output_tail}
+  Note over S,Q: when the session ends, its waiting and running jobs are stopped
+        </pre></div>
+        <figcaption><span class="uml">UML · sequence</span><code>renderq.mjs</code>. The web studio shows "Waiting to render" or "Rendering: &lt;label&gt;".</figcaption>
+      </figure>
+    </section>
+
+    <section id="pipelines">
+      <div class="kicker">Content</div>
+      <h2>Pipelines</h2>
+      <p>A pipeline describes how one kind of video gets made: <code>pipeline.json</code> (intake questions, steps, how each is reviewed, the error checks, status lines), <code>PIPELINE.md</code> (the craft every session reads first) and skills. A project pins a snapshot of its pipeline when it's created, so editing a pipeline only affects new projects.</p>
+      <figure>
+        <div class="diagram"><pre class="mermaid">
+flowchart LR
+  brief["Brief<br/><small>questions</small>"]
+  script["Script<br/><small>document · script</small>"]
+  frames["Style frames<br/><small>frames · stills</small>"]
+  animatic["Animatic<br/><small>video · motion, audio</small>"]
+  build["Build<br/><small>internal · motion, audio</small>"]
+  final["Final<br/><small>video · delivers</small>"]
+  brief --> script & frames
+  script & frames --> animatic --> build --> final
+  classDef you stroke:#ff8fd1,stroke-width:2px;
+  class brief,script,frames,animatic,final you;
+        </pre></div>
+        <figcaption><span class="uml">UML · activity (step graph)</span>The explainer. Pink: you review it. Script and style frames run side by side.</figcaption>
+      </figure>
+      <table>
+        <thead><tr><th>Pipeline</th><th>Steps you review</th><th>Error checks</th><th>Good for</th></tr></thead>
+        <tbody>
+          <tr><td><code>explainer</code></td><td>brief → script → style frames → animatic → final</td><td class="n">9</td><td>30 s – 2 min explainers, narrated or not</td></tr>
+          <tr><td><code>social-short</code></td><td>brief → hook frames → final</td><td class="n">8</td><td>15–45 s vertical shorts, hook first, works with sound off</td></tr>
+          <tr><td><code>logo-sting</code></td><td>directions → final</td><td class="n">6</td><td>a 3–8 s logo animation; the quickest real run</td></tr>
+        </tbody>
+      </table>
+      <h3>Shared skills (<code>pipelines/_shared/skills/</code>)</h3>
+      <table>
+        <tbody>
+          <tr><td><code>motion-design</code></td><td>the craft of motion: timing, easing, composition</td></tr>
+          <tr><td><code>remotion-motion</code></td><td>the Remotion template; <code>setup.mjs</code> installs it once per studio (was 748 MB per project)</td></tr>
+          <tr><td><code>voiceover</code></td><td><code>vo.mjs</code> narration (ElevenLabs or Qwen3-TTS), checked by speech-to-text; <code>sound.mjs</code> effects and music beds</td></tr>
+          <tr><td><code>final-pass</code></td><td><code>qc.mjs</code>: format, black or frozen frames, loudness, and a frame sheet Claude has to look at</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="backends">
+      <div class="kicker">Execution</div>
+      <h2>Backends</h2>
+      <p>A backend exports <code>run(…)</code> → <code>{ ok, error?, usage?, cost_usd? }</code> and <code>available(config, root)</code>. Adding one is adding a module to <code>BACKENDS</code> in <code>runner.mjs</code>.</p>
+      <table>
+        <thead><tr><th>Backend</th><th>What runs</th><th>Who pays</th></tr></thead>
+        <tbody>
+          <tr><td><code>claude-code</code></td><td><code>claude -p … --output-format stream-json</code> in the project folder with the configured permission flags; the stream feeds the activity log; optional bubblewrap sandbox</td><td>your Claude plan</td></tr>
+          <tr><td><code>anthropic-api</code></td><td>Mortiflix's own streaming agent loop: a persistent bash shell, a text editor confined to the project that returns images as image blocks, optional web search and fetch, adaptive thinking, prompt caching, server-side compaction, refusal fallbacks. Default model <code>claude-opus-5-5</code></td><td>your API key, per token</td></tr>
+          <tr><td><code>demo</code></td><td>no model: walks every gate with placeholder frames and a test-pattern video through the real bridge</td><td>nobody</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="voice">
+      <div class="kicker">Audio</div>
+      <h2>Narration</h2>
+      <p><code>voice/index.mjs</code> holds the studio's choice (<code>none</code>, <code>elevenlabs</code> or <code>qwen</code>) and hands a session <code>MFX_VOICE</code>, plus <code>ELEVENLABS_API_KEY</code> only while ElevenLabs is the engine. Sessions narrate with the voiceover skill's <code>vo.mjs</code>; every line is checked by speech-to-text and retaken if words go missing, and word timings drive the animation.</p>
+      <table>
+        <tbody>
+          <tr><td><code>elevenlabs</code></td><td>your voices, the default voices or the Voice Library; Eleven v4 by default and every API option (models, stability and similarity, language, normalization, pronunciation dictionaries, formats, data-residency servers). Settings shows your plan and whether you may use the audio commercially</td></tr>
+          <tr><td><code>qwen</code></td><td>Qwen3-TTS through ComfyUI on your own GPU: free and private. Offered when it fits (4 GB for 0.6B, 8 GB for 1.7B with delivery instructions)</td></tr>
+          <tr><td><code>none</code></td><td>on-screen text and music</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="interfaces">
+      <div class="kicker">Interfaces</div>
+      <h2>CLI, web studio &amp; <code>mfx</code></h2>
+      <h3>For you: <code>mortiflix</code></h3>
+      <table>
+        <tbody>
+          <tr><td><code>init</code> · <code>doctor</code> · <code>demo</code></td><td>make the studio and pick a backend · check the setup · a free walk-through with placeholder work</td></tr>
+          <tr><td><code>pipelines</code> · <code>new &lt;slug&gt;</code></td><td>list and validate pipelines · start a project (asks the brief's questions)</td></tr>
+          <tr><td><code>run</code> · <code>serve</code></td><td>run sessions until something waits on you · the web studio on 127.0.0.1:4646 (sessions start by themselves)</td></tr>
+          <tr><td><code>list</code> · <code>status</code> · <code>review</code></td><td>projects · one project · read the note, answer, pin notes, approve or ask for changes</td></tr>
+          <tr><td><code>pause</code> · <code>resume</code> · <code>cancel</code></td><td>control a project</td></tr>
+          <tr><td><code>config</code> · <code>checks</code> · <code>voice</code></td><td>settings (incl. <code>api-key</code>, stored without echo) · approve proposed checks · narration setup</td></tr>
+        </tbody>
+      </table>
+      <h3>For you: the web studio</h3>
+      <p>A plain <code>node:http</code> server and a no-build vanilla JS app (<code>web/app.js</code>). JSON API under <code>/api</code>, live updates over server-sent events (<code>/api/events</code>: <code>change</code> and <code>activity</code>), submitted media under <code>/files/&lt;id&gt;/reviews/…</code> with Range support.</p>
+      <table>
+        <thead><tr><th>Endpoint</th><th>Does</th></tr></thead>
+        <tbody>
+          <tr><td><code>GET /api/studio</code> · <code>PUT /api/config</code></td><td>studio info and backends · settings</td></tr>
+          <tr><td><code>GET /api/pipelines</code> · <code>GET /api/checks</code> · <code>POST /api/checks/:id</code></td><td>pipelines · the error checklist · approve or reject a proposed check</td></tr>
+          <tr><td><code>GET|POST /api/projects</code></td><td>list · create</td></tr>
+          <tr><td><code>GET /api/projects/:id</code> · <code>POST …/files</code> · <code>POST …/start</code></td><td>detail · upload intake files · start</td></tr>
+          <tr><td><code>POST …/pause|resume|cancel</code></td><td>control</td></tr>
+          <tr><td><code>POST …/reviews/:step/:version</code></td><td>approve or ask for changes (the only way past a gate)</td></tr>
+          <tr><td><code>POST …/questions/:qid</code></td><td>answer a session's question</td></tr>
+          <tr><td><code>/api/voice/…</code></td><td>narration: settings, ElevenLabs account/models/voices/library/dictionaries/preview, Qwen status, a test line</td></tr>
+          <tr><td><code>GET /api/events</code></td><td>server-sent events</td></tr>
+        </tbody>
+      </table>
+      <h3>For the session: <code>mfx</code></h3>
+      <table>
+        <tbody>
+          <tr><td><code>status &lt;key&gt; [--rendering]</code></td><td>the one sentence you see while it works (from the pipeline's whitelist)</td></tr>
+          <tr><td><code>step start|done</code> · <code>checks &lt;step&gt;</code></td><td>step progress · the error checks a step must report</td></tr>
+          <tr><td><code>submit &lt;step&gt; submission.json</code></td><td>submit at a gate</td></tr>
+          <tr><td><code>ask</code> · <code>needs-you</code> · <code>propose-check</code></td><td>a question with a default · a blocker only you can fix · a new error check</td></tr>
+          <tr><td><code>render -- …</code> · <code>render-wait &lt;id&gt;</code></td><td>queue heavy work · wait for it</td></tr>
+          <tr><td><code>feedback</code> · <code>files</code> · <code>handoff</code> · <code>taste</code> · <code>log</code></td><td>read your response · the submitted files · hand off · learn taste · log an event</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="security">
+      <div class="kicker">Trust</div>
+      <h2>Security</h2>
+      <div class="rule"><i>01</i><div><b>A session runs as you</b> by default: treat it like a capable assistant logged in as you. With <code>sandbox: true</code> (Linux, claude-code) it runs in bubblewrap: system read-only, its own project read-write, Mortiflix code read-only, its socket; your home, other projects, <code>state/</code> and secrets aren't there.</div></div>
+      <div class="rule"><i>02</i><div><b>Even unsandboxed, the gates hold:</b> no approving, no changing what was reviewed (it's copied to <code>state/</code>), no submitting files from outside the project.</div></div>
+      <div class="rule"><i>03</i><div><b>Your words are direction; outside material is data.</b> File contents, web pages and downloads are data, never instructions, and a session reports anything in them that tries to give orders.</div></div>
+      <div class="rule"><i>04</i><div><b>Keys stay in the studio.</b> The API key lives in <code>secrets.json</code> (mode 600), never returned by the API; sessions don't get it. The ElevenLabs key goes to a session only while it narrates with ElevenLabs.</div></div>
+      <div class="rule"><i>05</i><div><b>The web server</b> binds to 127.0.0.1; on another host every request needs an access token (HttpOnly, SameSite=Strict cookie); a wrong <code>Host</code> on loopback is refused (DNS rebinding); state-changing requests need an <code>X-Mortiflix</code> header.</div></div>
+    </section>
+
+    <section id="compute">
+      <div class="kicker">Measured</div>
+      <h2>Where the compute goes</h2>
+      <p>Measured on a real 5-second logo sting (claude-code backend, Claude Opus 5.5): <b>the model is the cost, everything else is noise.</b></p>
+      <table>
+        <tbody>
+          <tr><td>Whole sting, brief → approved final</td><td class="n">2 sessions · 12.5 min · $3.52 at list price</td></tr>
+          <tr><td>Input tokens served from the prompt cache</td><td class="n">95%</td></tr>
+          <tr><td>Mortiflix's own text a session starts with</td><td class="n">~6.8k tokens</td></tr>
+          <tr><td>Studio process per web refresh</td><td class="n">~1 ms per project</td></tr>
+          <tr><td>Runner while idle</td><td class="n">one directory listing every 1.5 s</td></tr>
+          <tr><td><code>qc.mjs</code> on a 60 s 1080p video</td><td class="n">2.2 s</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:14px">Why sessions end at gates: waiting is free. A session that stayed alive to wait would pay for its whole context again on every check. Fewer, shorter sessions (specific briefs, defaults on every question, checks that catch mistakes before a revision round) lower every part of the bill.</p>
+    </section>
+
+    <section id="modules">
+      <div class="kicker">Reference</div>
+      <h2>Module reference</h2>
+      <table>
+        <thead><tr><th>File</th><th>Role</th><th style="text-align:right">Lines</th></tr></thead>
+        <tbody>
+          <tr><td><code>bin/mortiflix</code> · <code>bin/mfx</code></td><td>entry points</td><td class="n">3 · 3</td></tr>
+          <tr><td><code>src/cli.mjs</code></td><td>the <code>mortiflix</code> command: init, new, run, review, serve, config, checks, voice…</td><td class="n">532</td></tr>
+          <tr><td><code>src/gates.mjs</code></td><td>every rule: step view, settle, submit, respond, checks, questions, pause/resume/cancel</td><td class="n">427</td></tr>
+          <tr><td><code>src/web/server.mjs</code></td><td>HTTP + SSE web studio API, file serving with Range, guards</td><td class="n">364</td></tr>
+          <tr><td><code>src/backends/anthropic-api.mjs</code></td><td>the API agent loop, Shell, confined editor</td><td class="n">308</td></tr>
+          <tr><td><code>src/voice/elevenlabs.mjs</code></td><td>ElevenLabs client and request building</td><td class="n">217</td></tr>
+          <tr><td><code>src/voice/qwen.mjs</code></td><td>GPU detection, ComfyUI client, speak/listen graphs</td><td class="n">186</td></tr>
+          <tr><td><code>src/runner.mjs</code></td><td>Runner: one session at a time, guards, BACKENDS</td><td class="n">183</td></tr>
+          <tr><td><code>src/pipelines.mjs</code></td><td>list, load, validate, hash and snapshot pipelines; checks per step</td><td class="n">181</td></tr>
+          <tr><td><code>src/torch.mjs</code></td><td>prepare the working folder, write <code>CLAUDE.md</code>, append taste</td><td class="n">176</td></tr>
+          <tr><td><code>src/projects.mjs</code></td><td>create/start/list projects, the record, events, journal</td><td class="n">175</td></tr>
+          <tr><td><code>src/studio.mjs</code></td><td>studio paths, config, secrets, session env, JSON I/O, file locks, <code>isInside</code></td><td class="n">149</td></tr>
+          <tr><td><code>src/backends/claude-code.mjs</code></td><td><code>claude -p</code> runner, activity parsing, bubblewrap args</td><td class="n">134</td></tr>
+          <tr><td><code>src/mfx.mjs</code></td><td>the session's command-line client to the bridge</td><td class="n">117</td></tr>
+          <tr><td><code>src/renderq.mjs</code></td><td>RenderQueue: one render at a time, studio-wide</td><td class="n">108</td></tr>
+          <tr><td><code>src/backends/demo.mjs</code></td><td>scripted stand-in that walks every gate</td><td class="n">97</td></tr>
+          <tr><td><code>src/bridge.mjs</code></td><td>per-session HTTP server on a Unix socket</td><td class="n">87</td></tr>
+          <tr><td><code>src/voice/index.mjs</code></td><td>the studio's narration choice and session environment</td><td class="n">83</td></tr>
+          <tr><td><code>web/app.js</code> · <code>app.css</code> · <code>index.html</code></td><td>the no-build web studio: projects, live log, review room</td><td class="n">835 · 234 · 26</td></tr>
+          <tr><td><code>harness/GATES.md</code></td><td>the protocol every session follows</td><td class="n">—</td></tr>
+          <tr><td><code>test/</code></td><td>flow, gates, CLI, web, API backend, skills, voice</td><td class="n">25 tests</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="extend">
+      <div class="kicker">Contributing</div>
+      <h2>Extending it</h2>
+      <h3>A new pipeline (where help is most wanted)</h3>
+<pre>cp -r pipelines/logo-sting ~/Mortiflix/pipelines/my-pipeline   # studio pipelines override built-ins
+$EDITOR ~/Mortiflix/pipelines/my-pipeline/pipeline.json
+mortiflix pipelines                                             # validates it
+mortiflix new my-pipeline --backend demo                        # walk its gates for free</pre>
+      <p>Wanted: music videos, product films, data stories, kinetic type, 3D in Blender, captions for existing footage. See <a href="docs/PIPELINES.md">docs/PIPELINES.md</a>.</p>
+      <h3>A new backend</h3>
+      <p>A module exporting <code>name</code>, <code>available(config, root)</code> and <code>run({ root, projectId, workdir, prompt, env, transcript, onActivity, signal, config })</code>, added to <code>BACKENDS</code> in <code>src/runner.mjs</code>. The session reaches the studio only through <code>mfx</code> with the <code>MFX_SOCKET</code>/<code>MFX_TOKEN</code> it's given.</p>
+      <h3>Further reading</h3>
+      <p><a href="docs/ARCHITECTURE.md">Architecture</a> · <a href="harness/GATES.md">Gate protocol</a> · <a href="docs/PIPELINES.md">Pipelines</a> · <a href="docs/SECURITY.md">Security</a> · <a href="docs/COMPUTE.md">Compute</a> · <a href="docs/VOICE.md">Voice</a> · <a href="CONTRIBUTING.md">Contributing</a></p>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">Mortiflix · AGPL-3.0 · <a href="https://github.com/GTKottman/mortiflix-oss">github.com/GTKottman/mortiflix-oss</a> · Diagrams rendered with <a href="https://mermaid.js.org/">Mermaid</a>.</div>
+</footer>
+
+<script type="module">
+  // Mermaid themed from this page's own colour tokens, so diagrams follow light/dark mode.
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  try {
+    const { default: mermaid } = await import('https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs');
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'base',
+      securityLevel: 'strict',
+      fontFamily: 'Sora, system-ui, sans-serif',
+      themeVariables: {
+        background: css('--raise'),
+        primaryColor: css('--bg'),
+        primaryTextColor: css('--ink'),
+        primaryBorderColor: css('--accent'),
+        secondaryColor: css('--raise'),
+        tertiaryColor: css('--raise'),
+        lineColor: css('--muted'),
+        textColor: css('--body'),
+        clusterBkg: css('--raise'),
+        clusterBorder: css('--line'),
+        noteBkgColor: css('--bg'),
+        noteTextColor: css('--body'),
+        noteBorderColor: css('--line'),
+        actorBkg: css('--bg'),
+        actorBorder: css('--accent'),
+        actorTextColor: css('--ink'),
+        signalColor: css('--muted'),
+        signalTextColor: css('--body'),
+        labelBoxBkgColor: css('--bg'),
+        labelBoxBorderColor: css('--line'),
+        labelTextColor: css('--ink'),
+        loopTextColor: css('--body'),
+        sequenceNumberColor: css('--accent-ink'),
+        edgeLabelBackground: css('--raise'),
+        fontSize: '13px',
+      },
+      flowchart: { curve: 'basis', htmlLabels: true, useMaxWidth: false },
+      sequence: { mirrorActors: false, useMaxWidth: false },
+      class: { useMaxWidth: false },
+      state: { useMaxWidth: false },
+    });
+    await mermaid.run({ querySelector: '.mermaid' });
+    // wide diagrams shrink to fit, but never below 75% of their natural size (text stays legible): then the box scrolls
+    const fit = () => {
+      for (const svg of document.querySelectorAll('.mermaid svg')) {
+        const natural = Number(svg.dataset.w || (svg.dataset.w = svg.viewBox.baseVal?.width || svg.getBoundingClientRect().width));
+        const room = svg.closest('.diagram').clientWidth - 40;
+        svg.style.width = `${Math.round(natural > room ? Math.max(room, natural * 0.75) : natural)}px`;
+      }
+    };
+    fit();
+    addEventListener('resize', fit);
+  } catch (err) {
+    document.documentElement.classList.add('no-mermaid');
+    console.warn('Mermaid did not load:', err);
+  }
+  // highlight the current section in the table of contents
+  const links = [...document.querySelectorAll('nav.toc a')];
+  const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+  const seen = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) {
+      links.forEach((a) => a.classList.remove('on'));
+      byId.get(e.target.id)?.classList.add('on');
+    }
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('main section').forEach((s) => seen.observe(s));
+</script>
+</body>
+</html>
