@@ -12,6 +12,8 @@ import * as voice from './voice/index.mjs';
 import * as keys from './keys.mjs';
 import * as setup from './setup.mjs';
 import { costText } from './usage.mjs';
+import * as booth from './booth.mjs';
+import * as rec from './record.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -43,8 +45,12 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
   mortiflix voice                                              what narrates your videos, and what this machine can run
   mortiflix voice elevenlabs                                   set up ElevenLabs (key, voice, model)
   mortiflix voice local                                        set up Qwen3-TTS on your GPU through ComfyUI
+  mortiflix voice own                                          narrate in your own voice, recorded in the booth
   mortiflix voice none                                         no narration (on-screen text and music)
   mortiflix voice test ["a line to speak"]                     hear the current voice
+  mortiflix record [<project>] [--device <mic>]                the recording booth in this terminal: read each line, keep the best take
+  mortiflix record <project> --import <folder>                 use files you recorded elsewhere, named after the lines (b01-1.wav…)
+  mortiflix record --list-devices                              the microphones ffmpeg can record from
 
   ${C.b('3D')}
   mortiflix blender [file.blend]                               open the studio's Blender, with its toolkits and Camera Flight
@@ -97,6 +103,7 @@ export async function run(argv = process.argv.slice(2)) {
       case 'config': return config(root, rest);
       case 'checks': return checks(root, rest);
       case 'voice': return voiceCmd(root, rest);
+      case 'record': return recordCmd(root, rest, a);
       case undefined: case 'help': return console.log(HELP);
       default: throw new Error(`unknown command "${cmd}" (mortiflix help)`);
     }
@@ -563,10 +570,11 @@ async function setupPart(root, id, st) {
   if (id === 'narration') {
     const v = voice.voiceConfig(root);
     const local = st.gpu;
-    console.log(`  Now: ${C.b({ none: 'no narration', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer' }[v.engine])}`);
+    console.log(`  Now: ${C.b({ none: 'no narration', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer', own: 'your own voice' }[v.engine])}`);
     console.log(`  1. ElevenLabs: their voices, paid per character. Needs an API key.`);
     console.log(`  2. This computer: Qwen3-TTS through ComfyUI, free and private. ${local.fits ? C.green(local.reason) : C.red(local.reason)}`);
     console.log('  3. No narration: on-screen text, music and sound.');
+    console.log('  4. Your own voice: you read the script line by line in the recording booth (web studio or terminal), or import files.');
     const pick = (await prompterOnce(`  Which? ${C.dim(`[Enter keeps ${v.engine}]`)} `)).trim();
     if (pick === '1') { await voiceCmd(root, ['elevenlabs']); }
     else if (pick === '2') {
@@ -577,6 +585,7 @@ async function setupPart(root, id, st) {
       }
       await voiceCmd(root, ['local']);
     } else if (pick === '3') { voice.saveVoice(root, { engine: 'none' }); console.log('  Narration off.'); }
+    else if (pick === '4') await voiceCmd(root, ['own']);
     return;
   }
   if (id === 'music') {
@@ -697,12 +706,42 @@ function voiceOffer() {
   return rec.fits ? `${eleven}, or ${C.b('mortiflix voice local')}: ${rec.reason} Free and private, through ComfyUI.` : `${eleven}.`;
 }
 
+// The recording booth (src/booth.mjs) from a terminal, or importing takes recorded elsewhere.
+async function recordCmd(root, rest, a) {
+  if (a['list-devices']) {
+    const args = rec.listDevicesArgs();
+    if (!args) return console.log('Linux: `pactl list short sources` (PipeWire/PulseAudio) or `arecord -l` (ALSA). Pass one with --device pulse:<name> or --device alsa:hw:1.');
+    spawnSync('ffmpeg', args, { stdio: 'inherit' });
+    return;
+  }
+  const id = pick(root, rest[0]);
+  if (typeof a.import === 'string') {
+    const r = booth.importFolder(root, id, a.import);
+    for (const t of r.imported) console.log(`  ${C.green('✔')} ${t.line}  ${t.file}  ${(t.duration_ms / 1000).toFixed(1)} s${t.flags.length ? C.red(`  · ${booth.FLAG_ADVICE[t.flags[0]]}`) : ''}`);
+    if (r.missing.length) console.log(`  ${C.red(`${r.missing.length} line(s) had no file`)}: ${r.missing.join(', ')}`);
+    return recordDone(root, id);
+  }
+  await rec.terminalBooth(root, id, { device: typeof a.device === 'string' ? a.device : null });
+  return recordDone(root, id);
+}
+
+async function recordDone(root, id) {
+  const st = booth.boothStatus(root, id);
+  if (st.missing.length) return console.log(`\n${st.kept} of ${st.lines.length} lines kept. Carry on any time: ${C.b(`mortiflix record ${id}`)}`);
+  console.log(`\n${C.green('✔')} Every line has a kept take.`);
+  const p = loadProject(root, id);
+  if (p.state === 'paused' && process.stdin.isTTY && !/^n/i.test((await prompterOnce('Give it to the studio now? [Y/n] ')).trim())) {
+    gates.resume(root, id);
+    console.log('Resumed: the studio builds the narration from your takes.');
+  }
+}
+
 async function voiceCmd(root, [sub, ...words]) {
   needStudio(root);
   const v = voice.voiceConfig(root);
   if (!sub) {
     const o = voice.voiceOverview(root);
-    console.log(`Narration: ${C.b({ none: 'none', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer' }[o.engine])}`);
+    console.log(`Narration: ${C.b({ none: 'none', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer', own: 'your own voice (the recording booth)' }[o.engine])}`);
     if (o.engine === 'elevenlabs') console.log(`  voice ${o.elevenlabs.voice_name || C.red('not chosen')} · model ${o.elevenlabs.model_id} · key ${o.elevenlabs_key || C.red('missing')}`);
     if (o.engine === 'qwen') console.log(`  ${o.qwen.voice} · ${o.qwen.model} · ${o.qwen.language} · ComfyUI ${o.qwen.url}`);
     console.log(`\nThis machine: ${o.gpus.length ? o.gpus.map((g) => `${g.name} (${g.vram_gb} GB)`).join(', ') : 'no NVIDIA GPU found'}`);
@@ -711,6 +750,13 @@ async function voiceCmd(root, [sub, ...words]) {
     return;
   }
   if (sub === 'none') { voice.saveVoice(root, { engine: 'none' }); return console.log('Narration off: videos use on-screen text, music and sound.'); }
+  if (sub === 'own') {
+    voice.saveVoice(root, { engine: 'own' });
+    console.log(`${C.green('✔')} Narration: your own voice. When a video reaches its narration, the studio writes the script as short lines and asks you to record them:`);
+    console.log(`  in the web studio (the project's ${C.b('Record narration')} button), in a terminal (${C.b('mortiflix record <project>')}),`);
+    console.log(`  or from files you recorded elsewhere (${C.b('mortiflix record <project> --import <folder>')}).`);
+    return;
+  }
   if (sub === 'test') return voiceTest(root, words.join(' '));
   const rl = prompter();
   try {

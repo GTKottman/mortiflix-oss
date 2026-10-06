@@ -126,13 +126,21 @@ keys for sessions go to `session.env` through `setSessionKey`; only their names 
 
 ## Narration (`src/voice/`)
 
-`voice/index.mjs` holds the studio's choice (`config.json` › `voice`: `none`, `elevenlabs` or `qwen`) and hands a
+`voice/index.mjs` holds the studio's choice (`config.json` › `voice`: `none`, `elevenlabs`, `qwen` or `own`) and hands a
 session `MFX_VOICE` (the settings) plus `ELEVENLABS_API_KEY` only when ElevenLabs is the engine.
 `voice/elevenlabs.mjs` talks to ElevenLabs for setup (account, models, voices, Voice Library, dictionaries, a test
 line) and builds every text-to-speech request so it carries only what the chosen model takes (Eleven v4: stability and
 similarity only). `voice/qwen.mjs` detects the GPU, reads the installed ComfyUI nodes (models, voices, runtime modes)
 and builds the speak and listen graphs. Sessions narrate with the voiceover skill's `vo.mjs`, which imports these
 modules (`MFX_HOME`), and make effects and music beds with `sound.mjs`. See [VOICE.md](VOICE.md).
+
+**The recording booth** (`src/booth.mjs`) is the `own` engine: the owner reads the session's `voice/lines.json`. Every
+take is kept under `voice/takes/` with its measurements; the kept take of a line is copied to `voice/clips/<line>.wav`
+with the same report shape `vo.mjs` writes, plus the `script` it was recorded for, so `vo.mjs speak` knows which lines
+are done (and which changed since) and `build` works unchanged. Three front ends share it: the web booth
+(`web/app.js` `boothView`, an AudioWorklet in `web/booth-worklet.js`, takes uploaded as WAV to
+`/api/projects/<id>/booth/…`), the terminal booth (`src/record.mjs`, ffmpeg from the system microphone) and
+`mortiflix record --import` for files recorded elsewhere.
 
 ## The web studio (`src/web/server.mjs`, `web/`)
 

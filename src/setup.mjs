@@ -39,7 +39,7 @@ export const PARTS = [
     id: 'narration',
     title: 'Narration',
     why: 'A voice reads the script, and the animation is timed to its words.',
-    needs: 'Either an ElevenLabs API key (their voices, paid per character), or ComfyUI with Qwen3-TTS on your own NVIDIA graphics card (free and private, about 10 GB to install), or no narration.',
+    needs: 'Either an ElevenLabs API key (their voices, paid per character), or ComfyUI with Qwen3-TTS on your own NVIDIA graphics card (free and private, about 10 GB to install), or your own voice (you record the lines in the booth), or no narration.',
   },
   {
     id: 'music',

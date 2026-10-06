@@ -17,6 +17,7 @@ import { Runner, BACKENDS } from '../runner.mjs';
 import * as voice from '../voice/index.mjs';
 import * as keys from '../keys.mjs';
 import * as setup from '../setup.mjs';
+import * as booth from '../booth.mjs';
 import { costText } from '../usage.mjs';
 
 const MIME = {
@@ -185,6 +186,39 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       const { answer } = await json(req);
       return after(gates.answerQuestion(root, id, m[1], answer ?? null));
     }
+    if (sub.startsWith('/booth')) return boothApi(req, res, id, sub, method, after);
+    return send(res, 404, { error: 'not found' });
+  }
+
+  // The recording booth (src/booth.mjs): the script, takes as raw WAV bodies, keeping a take, and "done", which
+  // resumes the project when it was waiting for the recording.
+  async function boothApi(req, res, id, sub, method, after) {
+    let m;
+    if (sub === '/booth' && method === 'GET') {
+      const p = loadProject(root, id);
+      return send(res, 200, { project: { id, title: p.title, state: p.state, needs_you: p.needs_you }, engine: voice.voiceConfig(root).engine, ...booth.boothStatus(root, id), advice: booth.FLAG_ADVICE });
+    }
+    if ((m = sub.match(/^\/booth\/lines\/([A-Za-z0-9-]{1,40})\/takes$/)) && method === 'POST') {
+      const take = booth.addTake(root, id, m[1], await rawBody(req, booth.MAX_TAKE_BYTES));
+      changed();
+      return send(res, 200, { take });
+    }
+    if ((m = sub.match(/^\/booth\/lines\/([A-Za-z0-9-]{1,40})\/takes\/(\d+)\/keep$/)) && method === 'POST') {
+      return after({ take: booth.keepTake(root, id, m[1], Number(m[2])) });
+    }
+    if ((m = sub.match(/^\/booth\/lines\/([A-Za-z0-9-]{1,40})\/takes\/(\d+)\/audio$/)) && method === 'GET') {
+      const file = booth.takeFile(root, id, m[1], Number(m[2]));
+      res.writeHead(200, { 'content-type': 'audio/wav', 'content-length': statSync(file).size, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      return createReadStream(file).pipe(res);
+    }
+    if (sub === '/booth/done' && method === 'POST') {
+      const st = booth.boothStatus(root, id);
+      if (!st.lines) throw new BadRequest('there is no script to record yet');
+      if (st.missing.length) return send(res, 409, { error: `${st.missing.length} line(s) still need a kept take: ${st.missing.join(', ')}`, missing: st.missing });
+      const p = loadProject(root, id);
+      if (p.state === 'paused') gates.resume(root, id);
+      return after({ resumed: p.state === 'paused' });
+    }
     return send(res, 404, { error: 'not found' });
   }
 
@@ -341,6 +375,17 @@ function send(res, code, body) {
 function same(a, b) {
   const x = Buffer.from(String(a)), y = Buffer.from(String(b));
   return x.length === y.length && timingSafeEqual(x, y);
+}
+
+// A raw request body (a recorded take), refused past `limit` bytes.
+function rawBody(req, limit) {
+  return new Promise((ok, fail) => {
+    const parts = [];
+    let n = 0;
+    req.on('data', (d) => { n += d.length; if (n > limit) { fail(new BadRequest('too large')); req.destroy(); } else parts.push(d); });
+    req.on('end', () => ok(Buffer.concat(parts)));
+    req.on('error', fail);
+  });
 }
 
 function json(req, limit = 2_000_000) {

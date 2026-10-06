@@ -1,6 +1,6 @@
 ---
 name: voiceover
-description: Narration, sound effects and music beds in the voice the studio set up (ElevenLabs, or Qwen3-TTS on this machine's GPU): lines from the approved script, checked takes, one voice track and a word-timing map the animation follows. Use for any narrated animatic or final, a re-take, or sound design.
+description: Narration, sound effects and music beds in the voice the studio set up (ElevenLabs, Qwen3-TTS on this machine's GPU, or the owner's own voice from the recording booth): lines from the approved script, checked takes, one voice track and a word-timing map the animation follows. Use for any narrated animatic or final, a re-take, or sound design.
 ---
 
 # Voiceover
@@ -26,7 +26,13 @@ node $VO build voice/lines.json                  # voice/voice.wav + voice/timin
   isn't ready, that's a `mfx needs-you`.
 - **`none`**: no narration. If the brief asked for one, ask at the next gate whether to go on-screen-text-only
   (the default) or wait while the owner sets a voice up. Never use a robotic system voice.
-- **The owner's own recording** in `input/`: use it instead (cut it into lines as clips, then `build`).
+- **`own`**: the owner narrates in their own voice. Write `voice/lines.json` exactly as below (short lines; put
+  delivery notes as a `[tag]` at the start, which the owner sees as direction; skip IPA and v4 tricks, a person reads
+  `script`). `node $VO speak voice/lines.json` then lists the lines still to record and prints the `mfx needs-you`
+  text that sends the owner to the recording booth (the web studio, `mortiflix record`, or importing files). Send it
+  and stop. When they resume, `speak` passes and `build` makes the track, timed per line. If you change a line after
+  it was recorded, `speak` asks for that line again.
+- **The owner's own recording** in `input/` (one long file, any engine): use it instead (cut it into lines as clips, then `build`).
 
 Don't change the voice or the model yourself: they're the owner's choice. Suggest a change in the handoff if one
 would clearly be better.

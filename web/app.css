@@ -237,3 +237,34 @@ details > summary { cursor: pointer; color: var(--muted); font-size: 13px; paddi
 .tool-row { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 10px 0; }
 .tool-row .chip { white-space: normal; }
 .setup-log { max-height: 220px; overflow: auto; background: var(--raise); border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-all; }
+
+/* ---------- recording booth ---------- */
+.booth-tips { color: var(--body); margin: 0 0 8px; padding-left: 18px; }
+.booth-tips li { margin: 4px 0; }
+.booth-meter { height: 6px; background: var(--line); margin: 12px 0 6px; max-width: 360px; }
+.booth-meter i { display: block; height: 100%; width: 0; background: var(--ok); transition: width 60ms linear; }
+.booth-meter i.hot { background: var(--bad); }
+.booth-stage { padding-top: 6px; }
+.booth-progress { display: flex; gap: 14px; align-items: center; color: var(--muted); font-size: 13px; flex-wrap: wrap; }
+.booth-dots { display: flex; gap: 4px; list-style: none; padding: 0; margin: 0; flex-wrap: wrap; }
+.booth-dots button { width: 10px; height: 10px; border: 1px solid var(--muted); background: transparent; padding: 0; cursor: pointer; display: block; }
+.booth-dots .done button { background: var(--ok); border-color: var(--ok); }
+.booth-dots .current button { outline: 2px solid var(--ink); outline-offset: 2px; }
+.booth-script { margin: 34px 0 12px; border-left: 3px solid var(--accent); padding-left: 18px; }
+.booth-line { font-family: var(--display); color: var(--ink); font-size: clamp(22px, 3.2vw, 34px); line-height: 1.3; margin: 10px 0; }
+.booth-near { color: var(--faint); font-size: 15px; margin: 0; }
+.booth-direction { display: flex; gap: 12px; align-items: center; margin-bottom: 26px; }
+.booth-controls { display: flex; gap: 18px; align-items: center; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.booth-rec { width: 76px; height: 76px; border-radius: 50%; border: 2px solid var(--accent); background: transparent; cursor: pointer; display: grid; place-items: center; touch-action: none; }
+.booth-rec-dot { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); transition: transform 120ms ease, border-radius 120ms ease; }
+.is-recording .booth-rec { border-color: var(--bad); }
+.is-recording .booth-rec-dot { background: var(--bad); transform: scale(0.8); border-radius: 6px; }
+.booth-after { padding: 16px 0; }
+.booth-takes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.booth-take { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border: 1px solid var(--line); background: transparent; color: var(--body); padding: 6px 12px; cursor: pointer; font-size: 13px; }
+.booth-take b { color: var(--ink); font-weight: 500; }
+.booth-take.on { border-color: var(--ink); }
+.booth-take.kept b::after { content: " ✓"; color: var(--ok); }
+.booth-keys { margin-top: 18px; color: var(--faint); }
+.booth-review .row { grid-template-columns: 28px 1fr auto; }
+.booth-review .main span { white-space: normal; }

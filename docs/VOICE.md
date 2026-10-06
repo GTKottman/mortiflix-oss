@@ -1,18 +1,37 @@
 # Narration, sound effects and music
 
-Mortiflix can narrate your videos three ways. Pick one in **Settings › Narration** (web) or with `mortiflix voice`.
+Mortiflix can narrate your videos four ways. Pick one in **Settings › Narration** (web) or with `mortiflix voice`.
 
-| | ElevenLabs | This computer (Qwen3-TTS) | No narration |
-|---|---|---|---|
-| Sound | the most natural voices; 90+ languages on Eleven v4 | very good; 10 languages | on-screen text and music carry it |
-| Cost | per character, on your ElevenLabs plan | free (your electricity) | free |
-| Privacy | text goes to ElevenLabs | nothing leaves your machine | nothing to send |
-| Needs | an API key from elevenlabs.io | an NVIDIA GPU with 4 GB+ (8 GB+ for the 1.7B voice), ComfyUI, the TTS Audio Suite | nothing |
-| Voices | thousands (yours, the defaults, the Voice Library, your own clones) | 9 built into the model | |
-| Also | sound effects and music beds | | |
+| | ElevenLabs | This computer (Qwen3-TTS) | Your own voice | No narration |
+|---|---|---|---|---|
+| Sound | the most natural voices; 90+ languages on Eleven v4 | very good; 10 languages | you | on-screen text and music carry it |
+| Cost | per character, on your ElevenLabs plan | free (your electricity) | free (your time) | free |
+| Privacy | text goes to ElevenLabs | nothing leaves your machine | nothing leaves your machine | nothing to send |
+| Needs | an API key from elevenlabs.io | an NVIDIA GPU with 4 GB+ (8 GB+ for the 1.7B voice), ComfyUI, the TTS Audio Suite | a microphone (and ffmpeg for the terminal booth) | nothing |
+| Voices | thousands (yours, the defaults, the Voice Library, your own clones) | 9 built into the model | yours | |
+| Also | sound effects and music beds | | | |
 
-Whichever you choose, every line is checked by speech to text after it's made: a take with missing or extra words
-is made again, and the timings of every word go to the animation.
+Generated lines are checked by speech to text after they're made: a take with missing or extra words is made again,
+and the timings of every word go to the animation. Your own recordings are timed line by line.
+
+## Your own voice: the recording booth
+
+Choose **Your own voice** in Settings › Narration (or `mortiflix voice own`). When a video reaches its narration, the
+studio writes the script as short lines and pauses the project with a note asking you to record. Then any of:
+
+- **In the web studio**: open the project and choose **Record narration**. Check your microphone and the room, then
+  read each line: hold **Space** (or the big button) while you speak, let go to stop. It plays the take back and flags
+  a take that clipped, is very quiet, or seems too short or long. Record as many takes as you like, **Enter** keeps
+  the selected one and moves on, ← → move between lines. Takes save as you go, so you can stop and come back. When
+  every line has a kept take, **Done** hands it to the studio. (Browsers allow the microphone on the computer the
+  studio runs on, or over HTTPS.)
+- **In a terminal**: `mortiflix record <project>`. **Enter** starts and stops a take, **p** plays it, **k** keeps it,
+  **n**/**b** move between lines, **q** stops for now. It records with ffmpeg from the default microphone; pick another
+  with `--device` (`mortiflix record --list-devices`).
+- **From files you recorded elsewhere** (a DAW, a phone): name each file after its line (`b01-1.wav`, `b01-2.m4a`, …;
+  the booth and `voice/lines.json` show the ids) and run `mortiflix record <project> --import <folder>`.
+
+If the studio rewrites a line after you recorded it, that line asks for a new take.
 
 ## ElevenLabs
 

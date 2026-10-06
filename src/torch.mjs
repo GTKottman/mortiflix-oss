@@ -1,6 +1,7 @@
 // Passing the torch: before every session the working folder gets a fresh CLAUDE.md (where things stand, what the
 // owner said, the error checks, the brief) plus a clean copy of the pinned pipeline, its skills and the gate
 // protocol. Every session ends with `mfx handoff`, which appends to JOURNAL.md; the next one starts from there.
+import { voiceConfig } from './voice/index.mjs';
 import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, cpSync, readdirSync, copyFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO, paths } from './studio.mjs';
@@ -41,6 +42,7 @@ function studioSection(root) {
   if (st.music.engine === 'none') lines.push('- **Music:** the owner chose no music. Skip any music step with a short note (`mfx step-done`), never improvise one.');
   else if (st.strudel.ok && st.chrome.ok) lines.push(`- **Music:** Strudel ${st.strudel.version}, scored after the animatic with the **music** skill.${st.music.midi ? ' The owner also wants the **MIDI pack** (every part, the cue sheet) with the final.' : ''}`);
   else lines.push('- **Music:** Strudel isn\'t set up yet. When a music step is ready, `mfx needs-you`: "Run `mortiflix setup music`, then resume."');
+  if (voiceConfig(root).engine === 'own') lines.push('- **Narration:** the owner narrates in their **own voice**. Write `voice/lines.json` as usual (short lines; delivery notes as a `[tag]` at the start, which the owner sees as direction), then `vo.mjs speak`: it lists the lines that still need a recording and the exact `mfx needs-you` text that sends the owner to the recording booth. When they resume, `speak` passes and `build` makes the track (timed per line).');
   if (st.assets.sites.length && st['browser-harness'].ok) {
     lines.push(`- **Asset sites** (the **assets** skill, in the owner's own Chrome): ${st.assets.sites.map((x) => `${x.url}${x.notes ? ` (${x.notes})` : ''}`).join('; ')}. Only these.`);
   } else lines.push('- **Asset sites:** none. Make every visual yourself; never download assets from the web.');

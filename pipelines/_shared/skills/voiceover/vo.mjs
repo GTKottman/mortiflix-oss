@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// vo.mjs: narration for a video, in the voice the studio set up (ElevenLabs, or Qwen3-TTS on this machine's GPU).
+// vo.mjs: narration for a video, in the voice the studio set up (ElevenLabs, Qwen3-TTS on this machine's GPU, or the
+// owner's own voice from the recording booth).
 //
 //   node .claude/skills/voiceover/vo.mjs check
 //   node .claude/skills/voiceover/vo.mjs speak voice/lines.json [--only id,id] [--max-takes 3] [--jobs N]
@@ -249,6 +250,27 @@ function finish(list, report) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// The owner's own voice: nothing to generate. The recording booth (web studio or `mortiflix record`) puts each kept
+// take in voice/clips/<id>.wav with a report whose `script` says which words it was recorded for.
+
+function speakOwn(list) {
+  const report = list.map((l) => {
+    const meta = existsSync(join(OUT, 'clips', `${l.id}.json`)) ? JSON.parse(readFileSync(join(OUT, 'clips', `${l.id}.json`), 'utf8')) : null;
+    const clip = existsSync(join(OUT, 'clips', `${l.id}.wav`));
+    const script = heard(l).replace(/\s+/g, ' ').trim();
+    const pass = Boolean(clip && meta?.engine === 'own voice' && (meta.script === undefined || meta.script === script));
+    return { id: l.id, engine: 'own voice', pass, ...(pass ? { take: meta.take, seconds: meta.seconds } : { problems: [clip && meta?.script !== script ? 'the line changed since it was recorded' : 'not recorded yet'] }) };
+  });
+  writeFileSync(join(OUT, 'speak-report.json'), JSON.stringify(report, null, 2));
+  const todo = report.filter((r) => !r.pass);
+  if (!todo.length) return console.log(`${list.length}/${list.length} lines recorded by the owner: run build next`);
+  const project = process.env.MFX_PROJECT || '<project>';
+  console.log(`${list.length - todo.length}/${list.length} lines recorded; ${todo.length} still need the owner's voice: ${todo.map((r) => r.id).join(', ')}`);
+  console.log(`Ask the owner (then stop; they resume when it's done):\n  mfx needs-you "The narration script is ready: please record ${todo.length} line${todo.length === 1 ? '' : 's'} in the recording booth (open the project and choose Record narration, or run: mortiflix record ${project})."`);
+  process.exitCode = 1;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // build: one track with gaps, and where every line and word lands in it
 
 function build() {
@@ -306,6 +328,8 @@ async function check() {
     const st = await new q.ComfyUI({ url: cfg.url }).status();
     console.log(JSON.stringify({ engine, ...st, chosen: { model: cfg.model, voice: cfg.voice, language: cfg.language, instruct: /1\.7B/.test(cfg.model) ? cfg.instruct : '(the 0.6B model takes no instructions)' }, notes: 'tags and IPA are not read: write delivery into the instruction and spell names the way they sound' }, null, 2));
     if (!st.ok) process.exitCode = 1;
+  } else if (engine === 'own') {
+    console.log(JSON.stringify({ engine, note: 'The owner narrates in their own voice. Write voice/lines.json, then `speak` lists the lines still to record and the mfx needs-you text for the owner; after they record, `speak` passes and `build` makes the track (timed per line).' }, null, 2));
   } else {
     console.log(JSON.stringify({ engine: 'none', note: 'No voice is set up in this studio. Make the video with on-screen text, or ask the owner (mfx ask) whether to wait for a voice.' }, null, 2));
   }
@@ -316,6 +340,7 @@ else if (cmd === 'speak') {
   const list = lines();
   if (engine === 'elevenlabs') await speakEleven(list);
   else if (engine === 'qwen') await speakQwen(list);
+  else if (engine === 'own') speakOwn(list);
   else die('no voice is set up in this studio (vo.mjs check)');
 } else if (cmd === 'build') build();
 else die('usage: vo.mjs check | speak <lines.json> [--only ids] [--max-takes 3] [--jobs N] | build <lines.json> [--gap 0.4]');

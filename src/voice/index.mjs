@@ -1,10 +1,11 @@
-// The studio's narration setup: which engine (ElevenLabs, local Qwen3-TTS, or none) and its settings. The settings
+// The studio's narration setup: which engine (ElevenLabs, local Qwen3-TTS, the owner's own voice, or none) and its settings. The settings
 // live in config.json under `voice`; the ElevenLabs key lives in secrets.json and reaches only sessions that use it.
 import { loadConfig, saveConfig, readSecret, writeSecret, readSessionEnv } from '../studio.mjs';
 import * as eleven from './elevenlabs.mjs';
 import * as qwen from './qwen.mjs';
 
-export const ENGINES = ['none', 'elevenlabs', 'qwen'];
+// own: the owner narrates in their own voice, line by line, in the recording booth (src/booth.mjs).
+export const ENGINES = ['none', 'elevenlabs', 'qwen', 'own'];
 
 export function voiceConfig(root) {
   const v = loadConfig(root).voice || {};

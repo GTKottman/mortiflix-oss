@@ -131,9 +131,13 @@ Pick a voice in **Settings › Narration** (or `mortiflix voice`):
 - **This computer**: Qwen3-TTS (open, Apache-2.0) through ComfyUI on your graphics card: free and private. Mortiflix
   checks your GPU and offers it when it fits (4 GB for the 0.6B voice, 8 GB for the 1.7B voice with delivery
   instructions).
+- **Your own voice**: you read the script yourself, one short line at a time, in the **recording booth**: in the web
+  studio (hold Space to record, listen back, keep the best take), in a terminal (`mortiflix record <project>`), or by
+  importing files you recorded elsewhere (`mortiflix record <project> --import <folder>`). The studio asks for you when
+  the script is ready and carries on once every line has a kept take.
 - **None**: on-screen text and music.
 
-Every line is checked by speech to text and retaken if words go missing; word timings drive the animation.
+Generated lines are checked by speech to text and retaken if words go missing; word timings drive the animation.
 Details: [docs/VOICE.md](docs/VOICE.md).
 
 ## Setup: music, assets and 3D
@@ -185,7 +189,7 @@ Mortiflix began as a hosted motion design studio, where every video was made sta
 gates, with clients approving each one. This repository is that process, boiled down to one machine and opened up,
 so it can be improved by more people than one studio.
 
-Not here yet (from the hosted studio, contributions welcome): a recording booth for your own narration, workflow
+Not here yet (from the hosted studio, contributions welcome): workflow
 preferences learned from your pins, redo rounds on a delivered video, share links, music in the social-short pipeline,
 and more pipelines (codebase explainers, 3D music videos, real estate films).
 

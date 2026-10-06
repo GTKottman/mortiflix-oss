@@ -6,6 +6,7 @@ const $status = document.getElementById('top-status');
 let studio = null;
 let projectsCache = [];
 let current = { name: null, refresh: null };
+let leaveView = null; // a view that holds something open (the booth's microphone) releases it here
 
 // ---------- helpers ----------
 
@@ -71,6 +72,7 @@ const routes = [
   [/^new(?:\/([a-z0-9_-]+))?$/, newView, 'new'],
   [/^p\/([a-z0-9-]+)$/, projectView, 'studio'],
   [/^p\/([a-z0-9-]+)\/review\/([a-z0-9_-]+)(?:\/(\d+))?$/, reviewView, 'studio'],
+  [/^p\/([a-z0-9-]+)\/booth$/, boothView, 'studio'],
   [/^pipelines$/, pipelinesView, 'pipelines'],
   [/^settings$/, settingsView, 'settings'],
 ];
@@ -80,6 +82,7 @@ async function render() {
   const hit = routes.find(([re]) => re.test(path));
   const [re, view, nav] = hit || routes[0];
   for (const a of document.querySelectorAll('[data-nav]')) a.classList.toggle('on', a.dataset.nav === nav);
+  if (leaveView) { try { leaveView(); } catch { /* already closed */ } leaveView = null; }
   current = { name: view.name, refresh: null, args: path.match(re)?.slice(1) || [] };
   // The review room is wider; the header widens with it so both keep one left edge.
   document.body.classList.toggle('wide', view === reviewView);
@@ -238,6 +241,13 @@ async function projectView(id) {
 
   const questions = openQs.length ? h('section', null, h('h2', null, 'Questions'), openQs.map((q) => questionForm(id, q))) : null;
 
+  // Your own voice: once the script exists, the booth is one click away.
+  const b = await api(`/api/projects/${id}/booth`).catch(() => null);
+  const narration = b?.lines && (b.engine === 'own' || b.takes.length) ? h('div', { class: b.missing.length ? 'turn-line' : 'state-line' },
+    h('div', null, h('div', { class: 'what' }, b.missing.length ? 'Record your narration' : 'Narration recorded'),
+      h('div', { class: 'why' }, `${b.kept} of ${b.lines.length} lines kept${b.missing.length ? ' · or in a terminal: ' : ''}`, b.missing.length ? h('code', null, `mortiflix record ${id}`) : null)),
+    h('a', { class: b.missing.length ? 'btn primary' : 'btn', href: `#/p/${id}/booth` }, b.missing.length ? 'Record narration' : 'Open the booth')) : null;
+
   const subsByStep = (key) => d.submissions.filter((s) => s.step === key);
   const steps = h('section', null, h('h2', null, 'Steps', h('span', { class: 'count' }, `${d.steps.filter((s) => ['approved', 'done', 'skipped'].includes(s.state)).length}/${d.steps.length}`)),
     h('ul', { class: 'rows' }, d.steps.map((s) => h('li', { class: 'row' }, icon(s.state),
@@ -270,7 +280,7 @@ async function projectView(id) {
   mount(
     h('a', { class: 'crumb', href: '#/' }, '← Studio'),
     h('div', { class: 'head' }, h('div', null, h('h1', null, p.title), h('div', { class: 'sub' }, h('span', { class: 'chip' }, d.pipeline.name), h('span', null, p.backend ? `${BACKEND_NAMES[p.backend]} backend` : ''))), actions),
-    stateBlock, deliverables, questions, steps, activity, brief, events, journal,
+    stateBlock, narration, deliverables, questions, steps, activity, brief, events, journal,
     h('p', { class: 'meta', style: { color: 'var(--faint)', fontSize: '12px', marginTop: '18px' } },
       `${usage.sessions} session${usage.sessions === 1 ? '' : 's'}${usage.output_tokens ? ` · ${usage.output_tokens.toLocaleString()} output tokens` : ''}${usage.cost_text ? ` · ${usage.cost_text}` : ''}`),
   );
@@ -791,6 +801,7 @@ async function keysSection() {
 const ENGINE_LABELS = {
   elevenlabs: ['ElevenLabs', 'The most natural voices, 90+ languages, your own voice clones. Paid per character (their free plan is non-commercial).'],
   qwen: ['This computer (Qwen3-TTS)', 'Open model on your graphics card through ComfyUI: free, private, nothing leaves the machine.'],
+  own: ['Your own voice', 'You read the script yourself, one short line at a time, in the recording booth: in this studio, in a terminal (mortiflix record), or from files you recorded elsewhere.'],
   none: ['No narration', 'Videos carry their story with on-screen text, music and sound.'],
 };
 
@@ -818,6 +829,10 @@ async function voiceSection() {
     fill(wrap, h('h2', null, 'Narration', msg), rows, panel);
     if (v.engine === 'elevenlabs') await elevenPanel(panel);
     else if (v.engine === 'qwen') await qwenPanel(panel);
+    else if (v.engine === 'own') fill(panel, h('div', { class: 'help', style: { padding: '12px 0' } },
+      h('p', null, 'When a video reaches its narration, the studio writes the script as short lines and asks you to record them. Open the project and choose ', h('b', null, 'Record narration'), ', or run ', h('code', null, 'mortiflix record <project>'), ' in a terminal.'),
+      h('p', null, 'Recorded somewhere else (a DAW, your phone)? Name each file after its line (b01-1.wav, b01-2.m4a…) and run ', h('code', null, 'mortiflix record <project> --import <folder>'), '.'),
+      h('p', null, 'For the best sound: a quiet room with soft things around, a hand\'s width from the microphone, headphones on.')));
     else fill(panel, h('p', { class: 'meta', style: { padding: '12px 0' } }, v.local.fits
       ? `Want a voice? ${v.local.reason} Pick "This computer" to narrate for free, or ElevenLabs for the most natural voices.`
       : 'Want a voice? Pick ElevenLabs above (a key from elevenlabs.io).'));
@@ -982,3 +997,239 @@ const tierOk = (tier, need) => TIERS.indexOf(String(tier || 'free').replace(/_.*
 await loadStudio();
 connect();
 render();
+
+// ---------- the recording booth ----------
+// You read the script one short line at a time. Hold Space (or the big button) to record, let go to stop; listen,
+// try again, keep the best take, next line. Takes save as they're made (src/booth.mjs), so you can stop and come back.
+// The kept take of each line becomes the narration the studio builds the video's timing on.
+
+const BOOTH = { preRoll: 0.3, postRoll: 0.4 };
+
+async function boothView(id) {
+  let d = await api(`/api/projects/${id}/booth`);
+  const back = h('a', { class: 'crumb', href: `#/p/${id}` }, `← ${d.project.title}`);
+  if (!d.lines) {
+    mount(back, h('div', { class: 'empty' }, h('div', { class: 'big' }, 'No script to record yet'),
+      'The studio writes the narration script first (voice/lines.json). When it is ready, the project asks for you and this booth opens it.'));
+    return;
+  }
+
+  // ---- audio: a worklet taps the microphone; a rolling pre-roll keeps the first syllable ----
+  let ctx = null; let stream = null; let node = null; let rate = 48000;
+  let ring = []; let rec = null; let stopping = null; let onTake = null; let onBlock = null;
+  const meter = { level: 0 };
+  const db = (x) => (x > 0 ? 20 * Math.log10(x) : -120);
+
+  async function startMic(deviceId) {
+    stream?.getTracks().forEach((t) => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: deviceId ? { exact: deviceId } : undefined, channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    if (!ctx) { ctx = new AudioContext(); await ctx.audioWorklet.addModule('booth-worklet.js'); }
+    rate = ctx.sampleRate;
+    node?.disconnect();
+    const src = ctx.createMediaStreamSource(stream);
+    node = new AudioWorkletNode(ctx, 'booth-tap');
+    node.port.onmessage = (e) => block(e.data);
+    src.connect(node);
+    if (ctx.state === 'suspended') await ctx.resume();
+  }
+  function block(b) {
+    let peak = 0;
+    for (let i = 0; i < b.length; i += 1) { const v = Math.abs(b[i]); if (v > peak) peak = v; }
+    meter.level = Math.max(peak, meter.level * 0.85);
+    onBlock?.(b);
+    if (rec) {
+      rec.push(b);
+      if (stopping !== null && (stopping -= b.length) <= 0) finishTake();
+      return;
+    }
+    ring.push(b);
+    let have = ring.reduce((a, x) => a + x.length, 0);
+    while (have - ring[0].length > BOOTH.preRoll * rate) { have -= ring[0].length; ring.shift(); }
+  }
+  function wavFrom(blocks) {
+    const n = blocks.reduce((a, b) => a + b.length, 0);
+    const out = new DataView(new ArrayBuffer(44 + n * 2));
+    const w = (o, s) => { for (let i = 0; i < s.length; i += 1) out.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); out.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+    out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true); out.setUint32(24, rate, true);
+    out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true); w(36, 'data'); out.setUint32(40, n * 2, true);
+    let o = 44;
+    for (const b of blocks) for (let i = 0; i < b.length; i += 1) { const v = Math.max(-1, Math.min(1, b[i])); out.setInt16(o, v < 0 ? v * 0x8000 : v * 0x7fff, true); o += 2; }
+    return new Blob([out.buffer], { type: 'audio/wav' });
+  }
+  let recStart = 0; let recTimer = null;
+  const startTake = () => {
+    if (rec || !node) return;
+    rec = [...ring]; ring = []; stopping = null; recStart = performance.now();
+    document.body.classList.add('is-recording');
+    recTimer = setInterval(() => { const t = document.getElementById('rec-time'); if (t) t.textContent = clock((performance.now() - recStart) / 1000); }, 200);
+  };
+  const stopTake = () => { if (rec && stopping === null) stopping = Math.round(BOOTH.postRoll * rate); };
+  function finishTake() {
+    const blocks = rec; rec = null; stopping = null;
+    clearInterval(recTimer);
+    const t = document.getElementById('rec-time'); if (t) t.textContent = '';
+    document.body.classList.remove('is-recording');
+    onTake?.(wavFrom(blocks));
+  }
+
+  const player = new Audio();
+  const takeUrl = (t) => `/api/projects/${id}/booth/lines/${encodeURIComponent(t.line_id)}/takes/${t.take_no}/audio`;
+  const play = (t) => { player.src = takeUrl(t); player.play().catch(() => {}); };
+  const takesFor = (lineId) => d.takes.filter((t) => t.line_id === lineId);
+  const keptFor = (lineId) => takesFor(lineId).find((t) => t.kept);
+  let lineIdx = Math.max(0, d.lines.findIndex((l) => !keptFor(l.id)));
+  let raf = 0;
+
+  const keys = (e) => {
+    if (!document.querySelector('.booth-stage') || e.target.closest('input, textarea, select')) return;
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) startTake(); }
+    else if (e.key === 'p' || e.key === 'P') document.getElementById('booth-preview')?.click();
+    else if (e.key === 'Enter') { e.preventDefault(); document.getElementById('booth-keep')?.click(); }
+    else if (e.key === 'ArrowRight' && !rec) { lineIdx = Math.min(d.lines.length - 1, lineIdx + 1); stage(); }
+    else if (e.key === 'ArrowLeft' && !rec) { lineIdx = Math.max(0, lineIdx - 1); stage(); }
+  };
+  const keyUp = (e) => { if (e.code === 'Space' && document.querySelector('.booth-stage')) { e.preventDefault(); stopTake(); } };
+  document.addEventListener('keydown', keys);
+  document.addEventListener('keyup', keyUp);
+  leaveView = () => {
+    cancelAnimationFrame(raf);
+    document.removeEventListener('keydown', keys);
+    document.removeEventListener('keyup', keyUp);
+    stream?.getTracks().forEach((t) => t.stop());
+    ctx?.close();
+    player.pause();
+    document.body.classList.remove('is-recording');
+  };
+
+  // ---- before the first take: microphone, level, the room ----
+  async function micCheck() {
+    const bar = h('i');
+    const status = h('p', { class: 'help' });
+    const select = h('select', { 'aria-label': 'Microphone', style: { maxWidth: '360px' } });
+    const roomNote = h('span', { class: 'help' });
+    const roomBtn = h('button', { class: 'btn' }, 'Check the room (3 s of quiet)');
+    const go = h('button', { class: 'btn primary' }, 'Start recording');
+    const loop = () => { bar.style.width = `${Math.min(100, Math.round(meter.level * 140))}%`; bar.classList.toggle('hot', meter.level > 0.89); raf = requestAnimationFrame(loop); };
+    mount(back, h('div', { class: 'head' }, h('h1', null, 'Recording booth')),
+      h('section', null, h('h2', null, 'Before you start'),
+        h('ul', { class: 'booth-tips' },
+          h('li', null, 'A quiet room with soft things around you (a wardrobe full of clothes is perfect).'),
+          h('li', null, 'About a hand\'s width from the microphone. Headphones help you hear yourself back.'),
+          h('li', null, `${d.lines.length} short lines. Hold Space (or the big button) while you speak, let go when you are done.`)),
+        h('div', { class: 'field' }, h('label', null, 'Microphone'), h('div', null, select, h('div', { class: 'booth-meter', 'aria-hidden': 'true' }, bar), status)),
+        h('div', { class: 'field' }, h('label', null, 'The room'), h('div', { class: 'actions' }, roomBtn, roomNote)),
+        h('div', { class: 'actions', style: { marginTop: '18px' } }, go)));
+    try {
+      await startMic();
+      const devices = (await navigator.mediaDevices.enumerateDevices()).filter((x) => x.kind === 'audioinput');
+      fill(select, devices.map((x, i) => h('option', { value: x.deviceId }, x.label || `Microphone ${i + 1}`)));
+      select.addEventListener('change', () => startMic(select.value));
+      status.textContent = 'Say something: the bar should jump to the middle and never hit the end.';
+      loop();
+    } catch {
+      status.textContent = window.isSecureContext
+        ? 'The booth needs your microphone. Allow it for this page (the icon by the address bar), then reload.'
+        : `Browsers only allow the microphone on this computer (localhost) or over HTTPS. Open the studio on the computer it runs on, or record in a terminal: mortiflix record ${id}`;
+      go.disabled = true; roomBtn.disabled = true;
+    }
+    roomBtn.addEventListener('click', () => {
+      roomBtn.disabled = true; roomNote.textContent = 'Stay quiet…';
+      let n = 0; let sum = 0;
+      onBlock = (b) => { for (let i = 0; i < b.length; i += 1) sum += b[i] * b[i]; n += b.length; };
+      setTimeout(() => {
+        onBlock = null; roomBtn.disabled = false;
+        const floor = db(Math.sqrt(sum / Math.max(1, n)));
+        roomNote.textContent = floor < -55 ? 'Nice and quiet.' : floor < -45 ? 'A little background noise: fine, but a quieter spot is better.' : 'It is noisy there (a fan, traffic, a TV?). A quieter room will sound much better.';
+      }, 3000);
+    });
+    go.addEventListener('click', () => { cancelAnimationFrame(raf); stage(); });
+  }
+
+  // ---- one line at a time ----
+  function stage() {
+    const lines = d.lines;
+    lineIdx = Math.min(lineIdx, lines.length - 1);
+    const line = lines[lineIdx];
+    let selected = keptFor(line.id) || takesFor(line.id).at(-1) || null;
+    const strip = h('div', { class: 'booth-takes' });
+    const flags = h('p', { class: 'help' });
+    const saving = h('span', { class: 'help' });
+    const previewBtn = h('button', { class: 'btn', id: 'booth-preview' }, 'Preview (P)');
+    const keepBtn = h('button', { class: 'btn primary', id: 'booth-keep' }, lineIdx === lines.length - 1 ? 'Keep (Enter)' : 'Keep & next (Enter)');
+    const paint = () => {
+      fill(strip, takesFor(line.id).map((t) => h('button', { class: `booth-take${selected === t ? ' on' : ''}${t.kept ? ' kept' : ''}`, onclick: () => { selected = t; paint(); play(t); } },
+        h('b', null, `Take ${t.take_no}`), h('span', null, `${(t.duration_ms / 1000).toFixed(1)} s${t.kept ? ' · kept' : ''}`))));
+      previewBtn.disabled = keepBtn.disabled = !selected;
+      flags.textContent = selected?.flags?.length ? `That take: ${d.advice[selected.flags[0]]}.` : '';
+    };
+    previewBtn.addEventListener('click', () => selected && play(selected));
+    keepBtn.addEventListener('click', async () => {
+      if (!selected) return;
+      keepBtn.disabled = true;
+      try {
+        await api(`/api/projects/${id}/booth/lines/${encodeURIComponent(line.id)}/takes/${selected.take_no}/keep`, { method: 'POST' });
+      } catch (e) { keepBtn.disabled = false; toast(e.message, true); return; }
+      for (const t of takesFor(line.id)) t.kept = t === selected;
+      const next = lines.findIndex((l, i) => i > lineIdx && !keptFor(l.id));
+      const anyLeft = lines.findIndex((l) => !keptFor(l.id));
+      if (anyLeft === -1) { finish(); return; }
+      lineIdx = next !== -1 ? next : anyLeft;
+      stage();
+    });
+    onTake = async (blob) => {
+      saving.textContent = 'Saving…';
+      try {
+        const r = await api(`/api/projects/${id}/booth/lines/${encodeURIComponent(line.id)}/takes`, { method: 'POST', raw: blob });
+        d.takes.push(r.take);
+        selected = r.take;
+        saving.textContent = 'Saved';
+        paint();
+        play(r.take);
+      } catch (e) { saving.textContent = ''; toast(e.message, true); }
+    };
+    const recBtn = h('button', { class: 'booth-rec', 'aria-label': 'Hold to record' }, h('span', { class: 'booth-rec-dot' }));
+    recBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); recBtn.setPointerCapture(e.pointerId); startTake(); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) recBtn.addEventListener(ev, stopTake);
+    recBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+    const kept = lines.filter((l) => keptFor(l.id)).length;
+    mount(back,
+      h('div', { class: 'booth-stage' },
+        h('div', { class: 'booth-progress' }, h('span', null, `Line ${lineIdx + 1} of ${lines.length}`),
+          h('ol', { class: 'booth-dots', 'aria-label': 'Lines' }, lines.map((l, i) => h('li', { class: `${keptFor(l.id) ? 'done' : ''}${i === lineIdx ? ' current' : ''}` },
+            h('button', { 'aria-label': `Line ${i + 1}${keptFor(l.id) ? ' (kept)' : ''}`, onclick: () => { lineIdx = i; stage(); } })))),
+          h('span', null, `${kept} kept`), kept === lines.length ? h('button', { class: 'btn link', onclick: finish }, 'Review & finish') : null),
+        h('div', { class: 'booth-script' },
+          lineIdx > 0 ? h('p', { class: 'booth-near' }, lines[lineIdx - 1].script) : null,
+          h('p', { class: 'booth-line' }, line.script),
+          lineIdx < lines.length - 1 ? h('p', { class: 'booth-near' }, lines[lineIdx + 1].script) : null),
+        h('div', { class: 'booth-direction' }, line.direction ? h('span', { class: 'chip' }, line.direction) : null, h('span', { class: 'help' }, `About ${line.est_seconds} s`)),
+        h('div', { class: 'booth-controls' }, recBtn, h('p', { class: 'help' }, h('span', { id: 'rec-time' }), ' ', matchMedia('(pointer: coarse)').matches ? 'Hold the button while you speak' : 'Hold Space or the button while you speak')),
+        h('div', { class: 'booth-after' }, strip, flags, h('div', { class: 'actions' }, previewBtn, keepBtn, saving)),
+        h('p', { class: 'help booth-keys' }, 'Keys: hold Space to record · P preview · Enter keep · ← → move between lines')));
+    paint();
+  }
+
+  // ---- every line kept: listen back, then hand it to the studio ----
+  function finish() {
+    const totalMs = d.lines.reduce((a, l) => a + (keptFor(l.id)?.duration_ms || 0), 0);
+    const done = h('button', { class: 'btn primary' }, 'Done: give it to the studio');
+    done.addEventListener('click', async () => {
+      done.disabled = true;
+      try {
+        const r = await api(`/api/projects/${id}/booth/done`, { method: 'POST' });
+        toast(r.resumed ? 'Sent: the studio carries on with your voice' : 'Saved: the studio uses your voice');
+        location.hash = `#/p/${id}`;
+      } catch (e) { done.disabled = false; toast(e.message, true); }
+    });
+    mount(back, h('div', { class: 'head' }, h('h1', null, 'Every line recorded')),
+      h('p', { class: 'meta' }, `${d.lines.length} lines · ${d.takes.length} takes · ${clock(totalMs / 1000)} of narration. Listen back if you like; you can still redo any line.`),
+      h('ol', { class: 'rows booth-review' }, d.lines.map((l, i) => h('li', { class: 'row' }, h('span', { class: 'meta' }, String(i + 1)),
+        h('div', { class: 'main' }, h('span', null, l.script)),
+        h('div', { class: 'end' }, h('button', { class: 'btn link', onclick: () => play(keptFor(l.id)) }, 'Play'), h('button', { class: 'btn link', onclick: () => { lineIdx = i; stage(); } }, 'Redo'))))),
+      h('div', { class: 'actions', style: { marginTop: '18px' } }, done));
+  }
+
+  if (d.missing.length) await micCheck();
+  else finish();
+}
