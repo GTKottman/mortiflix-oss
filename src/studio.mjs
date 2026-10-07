@@ -2,7 +2,7 @@
 //
 //   <studio>/
 //     config.json          settings (backend, model, port...). No secrets.
-//     secrets.json         your Anthropic and ElevenLabs keys (mode 600), set with `mortiflix keys`. Never served, never logged.
+//     secrets.json         your Anthropic, ElevenLabs and Upload-Post keys (mode 600), set with `mortiflix keys`. Never served, never logged.
 //     session.env          other keys handed to every session (e.g. GEMINI_API_KEY=...), mode 600, also set with `mortiflix keys`
 //     checks.json          the studio's error checklist (grows from your feedback)
 //     pipelines/<slug>/    your own pipelines (override the built-in ones with the same slug)

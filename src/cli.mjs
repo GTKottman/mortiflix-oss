@@ -14,6 +14,7 @@ import * as setup from './setup.mjs';
 import { costText } from './usage.mjs';
 import * as booth from './booth.mjs';
 import * as rec from './record.mjs';
+import * as pub from './publish.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -39,6 +40,12 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
   mortiflix reopen <project> <step> "what to change"           send an approved step back (you changed your mind)
   mortiflix pause|resume|cancel <project>
 
+  ${C.b('Publishing')}
+  mortiflix publish <project> [--to tiktok,instagram,youtube] [--profile <name>] [--title "…"] [--description "…"]
+                    [--at 2026-10-20T18:00 [--timezone Europe/Madrid]] [--yes]
+                                                               post a delivered video through Upload-Post (asks first)
+  mortiflix publish <project> --status                         how it went, per platform, with the links
+
   ${C.b('The web studio')}
   mortiflix serve [--port 4646] [--host 127.0.0.1]             the studio in your browser, with the runner
 
@@ -58,8 +65,8 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
 
   ${C.b('Settings')}
   mortiflix config [key [value]]                               show or change settings
-  mortiflix keys set <anthropic|elevenlabs|NAME>               set one key (typed hidden, or piped on stdin)
-  mortiflix keys remove <anthropic|elevenlabs|NAME>
+  mortiflix keys set <anthropic|elevenlabs|uploadpost|NAME>    set one key (typed hidden, or piped on stdin)
+  mortiflix keys remove <anthropic|elevenlabs|uploadpost|NAME>
   mortiflix checks [approve|reject <id>]                       the error checklist sessions proposed
 
   --studio <dir> works with every command.`;
@@ -106,6 +113,7 @@ export async function run(argv = process.argv.slice(2)) {
       }
       case 'resume': gates.resume(root, pick(root, rest[0])); return console.log('Resumed: it will run on the next `mortiflix run` (or right away under `serve`).');
       case 'cancel': gates.cancel(root, pick(root, rest[0])); return console.log('Cancelled.');
+      case 'publish': return publishCmd(root, rest[0], a);
       case 'serve': return serve(root, a);
       case 'config': return config(root, rest);
       case 'checks': return checks(root, rest);
@@ -324,6 +332,34 @@ function status(root, id) {
   if (costText(usage)) console.log(C.dim(costText(usage)));
   console.log(C.dim('\nLog:'));
   for (const e of readEvents(root, id, { limit: 12 })) console.log(C.dim(`  ${e.t.slice(5, 16).replace('T', ' ')} ${e.event}${e.step ? ` ${e.step}${e.version ? ` v${e.version}` : ''}` : ''} ${e.details ? `· ${e.details.slice(0, 80)}` : ''}`));
+}
+
+// Publishing: shows exactly what goes where, asks, then sends. Never runs on its own.
+async function publishCmd(root, given, a) {
+  const id = pick(root, given);
+  const opt = (k) => (typeof a[k] === 'string' ? a[k] : undefined);
+  if (a.status) {
+    const st = await pub.publishStatus(root, id);
+    console.log(`${C.b(st.status)}${st.message ? C.dim(` · ${st.message}`) : ''}  ${C.dim(st.job_id ? `job ${st.job_id}` : `request ${st.request_id}`)}`);
+    for (const r of st.results) {
+      const icon = { completed: C.green('✔'), failed: C.red('✖') }[r.state] || C.acc('●');
+      console.log(`  ${icon} ${r.platform.padEnd(10)} ${r.url || C.dim(r.message || r.state)}`);
+    }
+    if (!st.results.length) console.log(C.dim(st.scheduled_for ? `  Scheduled for ${st.scheduled_for}.` : '  Nothing back from the platforms yet.'));
+    return;
+  }
+  const plan = pub.publishPlan(root, id, { to: opt('to'), profile: opt('profile'), title: opt('title'), description: opt('description'), at: opt('at'), timezone: opt('timezone') });
+  console.log(`\n${C.b(plan.project)}  ${C.dim(`${(plan.size / 1024 ** 2).toFixed(1)} MB`)}`);
+  console.log(`  To      ${plan.platforms.join(', ')}${plan.from_brief ? C.dim(' (from the brief; --to changes it)') : ''}`);
+  console.log(`  Profile ${plan.profile}`);
+  console.log(`  Title   ${plan.title}`);
+  if (plan.description) console.log(`  Text    ${plan.description.slice(0, 200)}`);
+  console.log(`  When    ${plan.at ? `${plan.at} ${plan.timezone || 'UTC'}` : 'now'}\n`);
+  if (!a.yes && !process.stdin.isTTY) throw new Error('nothing sent: add --yes to post without being asked');
+  if (!a.yes && !(await confirm(`Post it${plan.at ? ' at that time' : ' now'}?`))) return console.log('Nothing sent.');
+  const sent = await pub.publish(root, plan);
+  console.log(`${C.green('✔')} ${plan.at ? 'Scheduled' : 'Sent'}. ${C.b(`mortiflix publish ${id} --status`)} shows how it went.`);
+  console.log(C.dim(`  ${sent.job_id ? `job ${sent.job_id}` : `request ${sent.request_id}`} · also at https://app.upload-post.com`));
 }
 
 // Review in the terminal: what was sent, then answers, notes and a decision.
