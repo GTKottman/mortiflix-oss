@@ -5,9 +5,8 @@
 <p align="center"><b>A motion design studio on your own machine.</b><br>
 Claude makes the video step by step. You approve every stage.</p>
 
-https://github.com/user-attachments/assets/66b33214-a5a6-44ea-8de8-c36dd4dd44a9
-
-<p align="center"><i>How to use Mortiflix (3:07). This video was made with Mortiflix. Also on <a href="https://youtu.be/53bRoQENmSA">YouTube</a>.</i></p>
+<p align="center"><a href="https://youtu.be/53bRoQENmSA"><img src="docs/media/how-to-use-mortiflix.gif" width="720" alt="How to use Mortiflix: tap to watch the video"></a><br>
+<b>▶ <a href="https://youtu.be/53bRoQENmSA">Watch: How to use Mortiflix</a></b> (3:07). This video was made with Mortiflix.</p>
 
 ---
 
