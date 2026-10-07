@@ -2,6 +2,7 @@
 // Everything installs into the studio folder (<studio>/tools/) or as the user's own tool (uv), never system-wide,
 // and nothing installs without being asked. The choices (music, asset sites) live in config.json.
 //
+//   transitions     the remotion-transitions library (MIT): every cut in every video is chosen from it (or inspired by it)
 //   strudel         Strudel (AGPL, npm) for the music step: it writes and renders the score
 //   chrome          a headless Chrome that Strudel renders in (an existing Chrome/Chromium is reused)
 //   browser-harness browser-use's browser-harness: sessions use your own Chrome to get assets from sites you name
@@ -34,6 +35,13 @@ export const PARTS = [
     title: 'Claude',
     why: 'Claude does the work: it writes, designs, animates and checks every step. Mortiflix is the studio around it.',
     needs: 'Your Claude Code login (your plan pays), or an Anthropic API key (you pay per token).',
+  },
+  {
+    id: 'transitions',
+    title: 'Transitions',
+    why: 'Every cut in every video is designed: before the animatic, a transition board shows how each style frame becomes the next, and why (the object or idea that carries the cut).',
+    needs: 'The remotion-transitions library from GitHub (about 5 MB): 50 motion-design transitions in nine families, with a preview of each.',
+    tools: ['transitions'],
   },
   {
     id: 'narration',
@@ -111,6 +119,18 @@ async function download(url, file, log) {
 
 // ---- detecting each tool ----
 
+export const TRANSITIONS_REPO = 'GTKottman/remotion-transitions';
+
+function transitionsStatus(root) {
+  const dir = join(toolsDir(root), 'remotion-transitions');
+  const cat = join(dir, 'catalog.json');
+  if (!existsSync(cat)) return { ok: false, detail: 'not installed' };
+  try {
+    const c = JSON.parse(readFileSync(cat, 'utf8'));
+    return { ok: true, path: dir, count: c.transitions.length, detail: `${c.transitions.length} transitions` };
+  } catch { return { ok: false, detail: 'catalog.json unreadable: reinstall' }; }
+}
+
 function strudelStatus(root) {
   const dir = join(toolsDir(root), 'strudel');
   const pkg = join(dir, 'node_modules', '@strudel', 'web', 'package.json');
@@ -184,6 +204,7 @@ async function comfyStatus(root) {
 export async function setupStatus(root) {
   const config = loadConfig(root);
   return {
+    transitions: transitionsStatus(root),
     strudel: strudelStatus(root),
     chrome: chromeStatus(root),
     'browser-harness': browserHarnessStatus(),
@@ -239,6 +260,21 @@ function saveToolPath(root, key, path) {
 }
 
 // ---- installing ----
+
+async function installTransitions(root, log) {
+  const dir = join(toolsDir(root), 'remotion-transitions');
+  const tgz = await download(`https://codeload.github.com/${TRANSITIONS_REPO}/tar.gz/HEAD`, join(toolsDir(root), 'downloads', 'remotion-transitions.tar.gz'), log);
+  const fresh = `${dir}.new`;
+  rmSync(fresh, { recursive: true, force: true });
+  mkdirSync(fresh, { recursive: true });
+  await run('tar', ['-xzf', tgz, '-C', fresh, '--strip-components=1'], { log });
+  rmSync(tgz, { force: true });
+  if (!existsSync(join(fresh, 'catalog.json'))) throw new Error('the download has no catalog.json');
+  rmSync(dir, { recursive: true, force: true });
+  const { renameSync } = await import('node:fs');
+  renameSync(fresh, dir);
+  return transitionsStatus(root);
+}
 
 async function installStrudel(root, log) {
   const dir = join(toolsDir(root), 'strudel');
@@ -504,10 +540,11 @@ export function openBlender(root, args = []) {
   return b.path;
 }
 
-const INSTALLERS = { strudel: installStrudel, chrome: installChrome, 'browser-harness': installBrowserHarness, blender: installBlender, 'blender-addons': installAddons, comfyui: installComfy };
+const INSTALLERS = { transitions: installTransitions, strudel: installStrudel, chrome: installChrome, 'browser-harness': installBrowserHarness, blender: installBlender, 'blender-addons': installAddons, comfyui: installComfy };
 export const TOOLS = Object.keys(INSTALLERS);
 
 export const TOOL_INFO = {
+  transitions: { name: 'Transitions library', what: 'github.com/GTKottman/remotion-transitions (MIT): 50 transitions for Remotion, a catalog and a preview of each', where: 'tools/remotion-transitions', size: '~5 MB' },
   strudel: { name: 'Strudel', what: `@strudel/web ${STRUDEL_VERSION} from npm (AGPL-3.0)`, where: 'tools/strudel', size: '~20 MB' },
   chrome: { name: 'Headless Chrome', what: 'Chrome for Testing\'s headless shell, from Google (only if you have no Chrome or Chromium)', where: 'tools/browsers', size: '~100 MB' },
   'browser-harness': { name: 'browser-harness', what: 'browser-use/browser-harness, installed with uv (Python 3.12) as your own tool', where: '~/.local/bin', size: '~60 MB' },
@@ -528,6 +565,8 @@ export async function installTool(root, id, { log = () => {} } = {}) {
 export function sessionToolsEnv(root) {
   const config = loadConfig(root);
   const env = { MFX_MUSIC: JSON.stringify(musicConfig(config)), MFX_ASSETS: JSON.stringify(assetsConfig(config)) };
+  const tr = transitionsStatus(root);
+  if (tr.ok) env.MFX_TRANSITIONS = tr.path;
   const s = strudelStatus(root);
   if (s.ok) env.MFX_STRUDEL = s.path;
   const c = chromeStatus(root);
@@ -542,7 +581,7 @@ export const blenderDocsDir = (root) => join(toolsDir(root), 'blender-addons', '
 // What the session brief says about this studio's tools (no network calls: ComfyUI is the narration skill's business).
 export function setupStatusSync(root) {
   const config = loadConfig(root);
-  return { strudel: strudelStatus(root), chrome: chromeStatus(root), 'browser-harness': browserHarnessStatus(), blender: blenderStatus(root),
+  return { transitions: transitionsStatus(root), strudel: strudelStatus(root), chrome: chromeStatus(root), 'browser-harness': browserHarnessStatus(), blender: blenderStatus(root),
     'blender-addons': addonsStatus(root), music: musicConfig(config), assets: assetsConfig(config) };
 }
 

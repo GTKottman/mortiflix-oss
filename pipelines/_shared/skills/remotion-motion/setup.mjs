@@ -6,7 +6,7 @@
 // Remotion with its own Chrome is ~750 MB and half a minute to install. The studio installs the template's exact
 // dependencies once (in $MFX_SHARED, keyed by the template's package.json) and each project links to it, so a new
 // project costs kilobytes and no download. Outside a Mortiflix session (no $MFX_SHARED) it installs locally.
-import { existsSync, mkdirSync, cpSync, symlinkSync, readFileSync, writeFileSync, rmSync, lstatSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, cpSync, symlinkSync, readFileSync, writeFileSync, rmSync, lstatSync, statSync, realpathSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -24,22 +24,44 @@ if (!existsSync(join(target, 'src'))) {
 } else console.log(`${target}: already set up (src/ kept)`);
 
 const modules = join(target, 'node_modules');
+const shared = process.env.MFX_SHARED || null;
+const pkg = readFileSync(join(template, 'package.json'));
+const dir = shared ? join(shared, `remotion-${createHash('sha256').update(pkg).digest('hex').slice(0, 12)}`) : null;
+
 if (existsSync(modules) || isLink(modules)) {
+  // Linked to an older shared install while the template has since gained packages (e.g. @remotion/transitions):
+  // move to the current one, unless this project added packages of its own.
+  if (dir && isLink(modules) && realpathOr(modules) !== realpathOr(join(dir, 'node_modules'))) {
+    const mine = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
+    const tpl = JSON.parse(pkg);
+    const ownExtras = Object.entries(mine.dependencies || {}).filter(([k, v]) => tpl.dependencies?.[k] !== v);
+    if (!ownExtras.length) {
+      ensureShared();
+      rmSync(modules);
+      symlinkSync(join(dir, 'node_modules'), modules, 'dir');
+      writeFileSync(join(target, 'package.json'), JSON.stringify({ ...mine, dependencies: tpl.dependencies, devDependencies: tpl.devDependencies }, null, 2) + '\n');
+      console.log(`node_modules: moved to the studio's current shared install (the template gained packages): ${dir}`);
+      process.exit(0);
+    }
+  }
   console.log(`node_modules: already there (${isLink(modules) ? 'linked to the studio\'s shared install' : 'a local install'})`);
   process.exit(0);
 }
 
-const shared = process.env.MFX_SHARED || null;
 if (!shared) {
   run(npm, ['install', '--no-audit', '--no-fund'], target);
   console.log('node_modules: installed locally');
   process.exit(0);
 }
 
-const pkg = readFileSync(join(template, 'package.json'));
-const dir = join(shared, `remotion-${createHash('sha256').update(pkg).digest('hex').slice(0, 12)}`);
-const done = join(dir, '.installed');
-if (!existsSync(done)) {
+ensureShared();
+symlinkSync(join(dir, 'node_modules'), modules, 'dir');
+console.log(`node_modules: linked to the studio's shared install (${dir})`);
+console.log('Need another package? Replace the link with a local install first: rm node_modules && npm install && npm install <pkg>');
+
+function ensureShared() {
+  const done = join(dir, '.installed');
+  if (existsSync(done)) return;
   mkdirSync(dir, { recursive: true });
   // One installer at a time (a lock directory; a stale one after 15 minutes is taken over).
   const lock = join(dir, '.installing');
@@ -61,10 +83,8 @@ if (!existsSync(done)) {
     rmSync(lock, { recursive: true, force: true });
   }
 }
-symlinkSync(join(dir, 'node_modules'), modules, 'dir');
-console.log(`node_modules: linked to the studio's shared install (${dir})`);
-console.log('Need another package? Replace the link with a local install first: rm node_modules && npm install && npm install <pkg>');
 
+function realpathOr(p) { try { return realpathSync(p); } catch { return p; } }
 function isLink(p) { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } }
 function run(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, stdio: 'inherit' });

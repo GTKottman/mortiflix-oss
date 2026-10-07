@@ -23,8 +23,8 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
 
   ${C.b('Getting started')}
   mortiflix init [--backend claude-code|anthropic-api|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
-  mortiflix setup                                              the walkthrough: Claude, narration, music, assets, 3D
-  mortiflix setup <claude|narration|music|assets|3d>           one part of it (mortiflix setup status: where things stand)
+  mortiflix setup                                              the walkthrough: Claude, transitions, narration, music, assets, 3D
+  mortiflix setup <claude|transitions|narration|music|assets|3d>  one part (mortiflix setup status: where things stand)
   mortiflix keys                                               add or change your keys (Anthropic, ElevenLabs, others)
   mortiflix doctor                                             check the tools a pipeline needs
   mortiflix demo                                               a full walk-through with placeholder work (free)
@@ -36,6 +36,7 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
   mortiflix list                                               your projects
   mortiflix status <project>                                   steps, versions, the log
   mortiflix review [<project>]                                 review what's waiting (approve, notes, answers)
+  mortiflix reopen <project> <step> "what to change"           send an approved step back (you changed your mind)
   mortiflix pause|resume|cancel <project>
 
   ${C.b('The web studio')}
@@ -97,6 +98,12 @@ export async function run(argv = process.argv.slice(2)) {
       case 'status': return status(root, pick(root, rest[0]));
       case 'review': return review(root, rest[0]);
       case 'pause': gates.pause(root, pick(root, rest[0])); return console.log('Paused.');
+      case 'reopen': {
+        const [proj, step, ...words] = rest;
+        if (!step || !words.length) throw new Error('mortiflix reopen <project> <step> "what to change"');
+        gates.reopen(root, pick(root, proj), step, { overall: words.join(' ') });
+        return console.log(`${C.acc('↺')} ${step} goes back for changes. ${C.b('mortiflix run')} makes the next version.`);
+      }
       case 'resume': gates.resume(root, pick(root, rest[0])); return console.log('Resumed: it will run on the next `mortiflix run` (or right away under `serve`).');
       case 'cancel': gates.cancel(root, pick(root, rest[0])); return console.log('Cancelled.');
       case 'serve': return serve(root, a);
@@ -172,11 +179,11 @@ async function init(root, a) {
   console.log(`  Backend: ${C.b(backend)} ${C.dim(BACKENDS[backend].available(loadConfig(root), root).detail)}`);
   if (backend === 'demo') console.log(C.dim('  (No Claude Code login or API key found: the demo backend makes placeholder work. Install Claude Code, or add an API key with `mortiflix keys`.)'));
   if (process.stdin.isTTY && !a.yes) {
-    console.log(`\n  Next, the setup walkthrough: what Mortiflix uses (Claude, narration, music, assets, 3D), why, and what it would`);
+    console.log(`\n  Next, the setup walkthrough: what Mortiflix uses (Claude, transitions, narration, music, assets, 3D), why, and what it would`);
     console.log('  install. Nothing installs without asking, and you can skip any part.');
     if (await confirm('  Set it up now?', true)) await setupWalk(root);
     else console.log(`  Any time: ${C.b('mortiflix setup')}`);
-  } else console.log(`\n  Next: ${C.b('mortiflix setup')} walks through Claude, narration, music, assets and 3D.`);
+  } else console.log(`\n  Next: ${C.b('mortiflix setup')} walks through Claude, transitions, narration, music, assets and 3D.`);
   console.log(`\n  Then: ${C.b('mortiflix demo')} for a free walk-through, or ${C.b('mortiflix serve')} to open the studio in your browser.`);
 }
 
@@ -567,6 +574,13 @@ async function setupPart(root, id, st) {
     }
     return;
   }
+  if (id === 'transitions') {
+    if (st.transitions.ok) {
+      console.log(`  ${mark(true)} ${st.transitions.detail} (${st.transitions.path})`);
+      if (await confirm('  Update the library to its latest version?', false)) await offerInstall(root, 'transitions', { ask: false });
+    } else await offerInstall(root, 'transitions', { ask: false });
+    return;
+  }
   if (id === 'narration') {
     const v = voice.voiceConfig(root);
     const local = st.gpu;
@@ -652,6 +666,7 @@ async function showSetup(root) {
   row(BACKENDS[config.backend].available(config, root).ok, 'Claude', `${config.backend}: ${BACKENDS[config.backend].available(config, root).detail}`);
   row(v.engine === 'none' ? null : v.engine === 'elevenlabs' ? Boolean(voice.elevenKey(root)) && Boolean(v.elevenlabs.voice_id) : st.comfyui.ok, 'Narration',
     v.engine === 'none' ? 'none' : v.engine === 'elevenlabs' ? `ElevenLabs: ${v.elevenlabs.voice_name || 'no voice chosen'} on ${v.elevenlabs.model_id}${voice.elevenKey(root) ? '' : ', key missing'}` : `this computer: ${st.comfyui.detail}`);
+  row(st.transitions.ok, 'Transitions', st.transitions.ok ? `remotion-transitions: ${st.transitions.detail}` : 'library not installed (mortiflix setup transitions)');
   row(st.music.engine === 'none' ? null : st.strudel.ok && st.chrome.ok, 'Music', st.music.engine === 'none' ? 'none' : `Strudel: ${st.strudel.detail}; Chrome: ${st.chrome.ok ? 'found' : 'missing'}${st.music.midi ? '; MIDI pack on' : ''}`);
   row(st.assets.sites.length ? st['browser-harness'].ok : null, 'Assets', st.assets.sites.length ? `${st.assets.sites.map((x) => x.url).join(', ')} (browser-harness ${st['browser-harness'].ok ? st['browser-harness'].detail : 'missing'})` : 'no sites: sessions make every visual themselves');
   row(st.blender.ok ? st['blender-addons'].ok : null, '3D', st.blender.ok ? `${st.blender.detail}; ${st['blender-addons'].detail}` : 'not set up');

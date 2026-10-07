@@ -673,7 +673,7 @@ async function setupSection() {
   const refresh = async () => { info = await api('/api/setup'); draw(); };
 
   // One tool: its status, what installing it means, an Install button and the live log while it runs.
-  const UPDATABLE = ['strudel', 'browser-harness', 'blender-addons'];   // the others are reused when found
+  const UPDATABLE = ['transitions', 'strudel', 'browser-harness', 'blender-addons'];   // the others are reused when found
   const toolRow = (id, label = info.tools[id].name) => {
     const st = info.status[id];
     const t = info.tools[id];
@@ -709,6 +709,7 @@ async function setupSection() {
       h('h2', null, 'Setup'),
       h('p', { class: 'meta' }, 'What the studio uses, why, and what it installs. Everything goes into the studio folder (or your own user tools), never system-wide, and nothing installs until you press Install.'),
       field(part('claude').title, h('div', null, ...intro('claude'), h('p', { class: 'meta' }, 'Choose below, in "Who makes the videos".'))),
+      field(part('transitions').title, h('div', null, ...intro('transitions'), toolRow('transitions'))),
       field(part('narration').title, h('div', null, ...intro('narration'),
         h('p', { class: 'meta' }, `This computer: ${st.gpu.reason}`),
         st.gpu.fits ? toolRow('comfyui') : null,

@@ -1,46 +1,197 @@
 {
   "slug": "social-short",
   "name": "Social short",
-  "description": "A 15 to 45 second vertical short for social feeds: one hook, one idea, one call to action. Brief, a style frame, the final.",
+  "description": "A 45 second to 3 minute vertical short for social feeds: one hook, one idea, one call to action. Brief, a style frame, the final.",
   "makes": "video",
-  "shared_skills": ["motion-design", "remotion-motion", "voiceover", "final-pass"],
+  "shared_skills": [
+    "motion-design",
+    "remotion-motion",
+    "transition-board",
+    "voiceover",
+    "final-pass"
+  ],
   "intake": [
-    { "id": "message", "label": "What's the one message?", "type": "long", "required": true },
-    { "id": "platform", "label": "Where will it run?", "type": "choice", "choices": ["TikTok / Reels / Shorts", "LinkedIn", "X", "Anywhere"], "default": "TikTok / Reels / Shorts" },
-    { "id": "length", "label": "Length", "type": "choice", "choices": ["15 s", "30 s", "45 s"], "default": "30 s" },
-    { "id": "aspect", "label": "Shape", "type": "choice", "choices": ["9:16", "1:1", "4:5"], "default": "9:16" },
-    { "id": "cta", "label": "Call to action", "type": "text" },
-    { "id": "brand", "label": "Logo, fonts, colours, references", "type": "files" }
+    {
+      "id": "message",
+      "label": "What's the one message?",
+      "type": "long",
+      "required": true
+    },
+    {
+      "id": "platform",
+      "label": "Where will it run?",
+      "type": "choice",
+      "choices": [
+        "TikTok / Reels / Shorts",
+        "LinkedIn",
+        "X",
+        "Anywhere"
+      ],
+      "default": "TikTok / Reels / Shorts"
+    },
+    {
+      "id": "length",
+      "label": "Length",
+      "type": "choice",
+      "choices": [
+        "45 s",
+        "1 min",
+        "1 min 30 s",
+        "2 min",
+        "3 min"
+      ],
+      "default": "45 s"
+    },
+    {
+      "id": "aspect",
+      "label": "Shape",
+      "type": "choice",
+      "choices": [
+        "9:16",
+        "1:1",
+        "4:5"
+      ],
+      "default": "9:16"
+    },
+    {
+      "id": "cta",
+      "label": "Call to action",
+      "type": "text"
+    },
+    {
+      "id": "brand",
+      "label": "Logo, fonts, colours, references",
+      "type": "files"
+    }
   ],
   "steps": [
-    { "key": "brief", "name": "Brief", "review": "questions" },
-    { "key": "style-frames", "name": "Hook frames", "review": "frames", "work": ["script", "stills"],
-      "describe": "The on-screen script plus two or three stills: the hook (first second), the middle, the CTA card." },
-    { "key": "final", "name": "Final", "review": "video", "work": ["motion", "audio"], "delivers": true }
+    {
+      "key": "brief",
+      "name": "Brief",
+      "review": "questions"
+    },
+    {
+      "key": "style-frames",
+      "name": "Hook frames",
+      "review": "frames",
+      "work": [
+        "script",
+        "stills"
+      ],
+      "describe": "The on-screen script plus two or three stills: the hook (first second), the middle, the CTA card."
+    },
+    {
+      "key": "transitions",
+      "name": "Transition board",
+      "review": "frames",
+      "work": [
+        "motion"
+      ],
+      "describe": "How each style frame becomes the next: for every cut, the object that carries it, the reason, a transition from the remotion-transitions library (or a new one inspired by it), and real in-between frames.",
+      "after": [
+        "style-frames"
+      ]
+    },
+    {
+      "key": "final",
+      "name": "Final",
+      "review": "video",
+      "work": [
+        "motion",
+        "audio"
+      ],
+      "delivers": true,
+      "after": [
+        "transitions"
+      ]
+    }
   ],
   "status_lines": {
     "brief": "Reading your brief",
     "frames": "Designing the hook",
     "build": "Animating",
     "qc": "Checking every frame",
-    "deliver": "Packaging your short"
+    "deliver": "Packaging your short",
+    "transitions": "Designing every cut"
   },
   "checks": [
-    { "id": "spelling-and-facts", "title": "Every word, name and number is right", "applies_to": ["script", "stills", "motion"],
-      "how": "Read every on-screen word against the brief. Names, numbers and spelling exactly right." },
-    { "id": "hook-in-one-second", "title": "The hook lands in the first second", "applies_to": ["stills", "motion"],
-      "how": "Frame 0 already shows the hook's subject or words: no logo intro, no blank or slow fade-in." },
-    { "id": "platform-safe-zones", "title": "Clear of the platform's buttons", "applies_to": ["stills", "motion"],
-      "how": "For 9:16, no text in the top 12%, the bottom 20% or the right 15% (captions, buttons, profile). Check on the stills and sampled frames." },
-    { "id": "text-contrast", "title": "Text is readable on a phone", "applies_to": ["stills", "motion"],
-      "how": "Text at least 4% of frame height, 4.5:1 contrast, on screen long enough to read twice (words / 3 + 1 seconds)." },
-    { "id": "sound-off", "title": "Works with the sound off", "applies_to": ["script", "motion"],
-      "how": "Every spoken idea is also on screen (captions or titles): watch the frame sheet without audio and the message still lands." },
-    { "id": "frame-sheet", "title": "Every second looked at", "applies_to": ["motion"],
-      "how": "qc.mjs passes (no black, flash or frozen frames unless designed) and you looked at its sheet." },
-    { "id": "format", "title": "The right size, rate and length", "applies_to": ["motion"],
-      "how": "qc.mjs: the brief's shape at 1080 wide or more, constant 30 fps, H.264 + AAC, duration within 5%." },
-    { "id": "loudness", "title": "Loudness and no clipping", "applies_to": ["audio"],
-      "how": "qc.mjs: -14 LUFS ±1, true peak ≤ -1 dBTP, nothing distorted when you listen." }
+    {
+      "id": "spelling-and-facts",
+      "title": "Every word, name and number is right",
+      "applies_to": [
+        "script",
+        "stills",
+        "motion"
+      ],
+      "how": "Read every on-screen word against the brief. Names, numbers and spelling exactly right."
+    },
+    {
+      "id": "hook-in-one-second",
+      "title": "The hook lands in the first second",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "Frame 0 already shows the hook's subject or words: no logo intro, no blank or slow fade-in."
+    },
+    {
+      "id": "platform-safe-zones",
+      "title": "Clear of the platform's buttons",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "For 9:16, no text in the top 12%, the bottom 20% or the right 15% (captions, buttons, profile). Check on the stills and sampled frames."
+    },
+    {
+      "id": "text-contrast",
+      "title": "Text is readable on a phone",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "Text at least 4% of frame height, 4.5:1 contrast, on screen long enough to read twice (words / 3 + 1 seconds)."
+    },
+    {
+      "id": "sound-off",
+      "title": "Works with the sound off",
+      "applies_to": [
+        "script",
+        "motion"
+      ],
+      "how": "Every spoken idea is also on screen (captions or titles): watch the frame sheet without audio and the message still lands."
+    },
+    {
+      "id": "frame-sheet",
+      "title": "Every second looked at",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "qc.mjs passes (no black, flash or frozen frames unless designed) and you looked at its sheet."
+    },
+    {
+      "id": "format",
+      "title": "The right size, rate and length",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "qc.mjs: the brief's shape at 1080 wide or more, constant 30 fps, H.264 + AAC, duration within 5%."
+    },
+    {
+      "id": "loudness",
+      "title": "Loudness and no clipping",
+      "applies_to": [
+        "audio"
+      ],
+      "how": "qc.mjs: -14 LUFS \u00b11, true peak \u2264 -1 dBTP, nothing distorted when you listen."
+    },
+    {
+      "id": "transitions-carried",
+      "title": "Every cut is carried and chosen",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "node .claude/skills/transition-board/board.mjs check passes: every cut names its carrier (the object or element that makes it happen) and why, uses a transition from the remotion-transitions library (or a new one that names the library transitions that inspired it) at a length inside its range, and lands on a named word. The video's cuts match the approved board."
+    }
   ]
 }

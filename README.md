@@ -8,7 +8,7 @@ Claude makes the video step by step. You approve every stage.</p>
 ---
 
 Most "AI video" tools are one prompt and a slot machine. Mortiflix works like a real motion design studio:
-a brief, a script, style frames, an animatic, a final, and **you review each stage** before the next one starts.
+a brief, a script, style frames, a transition board, an animatic, a final, and **you review each stage** before the next one starts.
 You pin a note on the exact spot of a frame or the exact moment of a video. The next version answers every note,
 one by one, and shows you what changed.
 
@@ -112,8 +112,8 @@ For scripts: `echo "$KEY" | mortiflix keys set elevenlabs`.
 
 | Pipeline | Steps you review | Good for |
 |---|---|---|
-| `explainer` | brief → script → style frames → animatic → music → final | 30 s to 2 min explainers, narrated or not, with an original score |
-| `social-short` | brief → hook frames → final | 15–45 s vertical shorts: hook first, works with sound off |
+| `explainer` | brief → script → style frames → transitions → animatic → music → final | 30 s to 2 min explainers, narrated or not, with an original score |
+| `social-short` | brief → hook frames → transitions → final | 45 s to 3 min vertical shorts: hook first, works with sound off |
 | `logo-sting` | directions → final | a 3–8 s logo animation; the quickest real run |
 
 They build in [Remotion](https://www.remotion.dev/) (React video) and check every render with ffmpeg (`qc.mjs`:
@@ -139,6 +139,15 @@ Pick a voice in **Settings › Narration** (or `mortiflix voice`):
 
 Generated lines are checked by speech to text and retaken if words go missing; word timings drive the animation.
 Details: [docs/VOICE.md](docs/VOICE.md).
+
+## Transitions
+
+Before the animatic, every project gets a **transition board**: for each change from one style frame to the next,
+the object or idea on screen that carries it, why the cut happens there, the word it lands on, and real in-between
+frames rendered from the two style frames and the chosen transition. Transitions come from the
+[remotion-transitions](https://github.com/GTKottman/remotion-transitions) library (installed by setup), or are new
+ones inspired by it. The screen never goes blank: no dip to a flat colour, no flash to white. A check reads every
+10% of every transition and fails any frame that does.
 
 ## Setup: music, assets and 3D
 

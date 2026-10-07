@@ -343,6 +343,44 @@ export function respond(root, id, stepKey, version, { verdict, overall = '', not
   });
 }
 
+// The owner changes their mind after approving: the step goes back for changes, with their note, and steps after it
+// that had started (but weren't approved) wait for the new version. The approval stays in the log.
+export function reopen(root, id, stepKey, { overall = '', notes = [] } = {}) {
+  const pp = projectPaths(root, id);
+  const pipeline = projectPipeline(root, id);
+  const step = findStep(pipeline, stepKey);
+  if (step.review === 'internal') refuse(`${stepKey} isn't reviewed by you: reopen the reviewed step before it`);
+  if (!String(overall).trim() && !notes.length) refuse('say what to change');
+  return update(root, id, (p) => {
+    const rec = p.steps?.[stepKey];
+    if (!rec || !['approved', 'done'].includes(rec.state)) refuse(`${stepKey} isn't approved (it's ${rec?.state || 'not started'})`);
+    const version = rec.version;
+    const dir = join(pp.reviews, stepKey, `v${version}`);
+    const before = existsSync(join(dir, 'feedback.json')) ? readJson(join(dir, 'feedback.json')) : null;
+    const feedback = {
+      step: stepKey, version, verdict: 'changes', reopened: true, approved_at: before?.decided_at || rec.decided_at || null,
+      overall: String(overall).slice(0, 4000),
+      notes: notes.map((n, i) => ({ n: i + 1, item: n.item ?? null, text: String(n.text || '').slice(0, 2000) })),
+      answers: before?.answers || [],
+      decided_at: now(),
+      how_to_read_annotations: 'The owner approved this version, then asked for these changes. Answer every note in the next version\'s pin_changes.',
+    };
+    writeJson(join(dir, 'feedback.json'), feedback);
+    mkdirSync(join(pp.work, 'feedback'), { recursive: true });
+    writeJson(join(pp.work, 'feedback', `${stepKey}-v${version}.json`), feedback);
+    p.steps[stepKey] = { ...rec, state: 'changes', decided_at: feedback.decided_at, last_feedback: { version, verdict: 'changes', notes: feedback.notes.length } };
+    // Later steps that depend on it and had started without being approved go back to waiting.
+    const after = new Set([stepKey]);
+    let grew = true;
+    while (grew) { grew = false; for (const s of pipeline.steps) if (!after.has(s.key) && s.after.some((a) => after.has(a))) { after.add(s.key); grew = true; } }
+    for (const k of after) if (k !== stepKey && p.steps[k] && !['approved', 'done', 'skipped'].includes(p.steps[k].state)) delete p.steps[k];
+    if (p.state === 'delivered') p.state = 'queued';
+    settle(p, pipeline);
+    event(root, id, { event: 'REOPENED', actor: 'you', step: stepKey, version, details: String(overall).slice(0, 200) });
+    return { step: stepKey, version, project_state: p.state };
+  });
+}
+
 export function answerQuestion(root, id, qid, value) {
   const pp = projectPaths(root, id);
   const pipeline = projectPipeline(root, id);

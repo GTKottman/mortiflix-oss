@@ -1,6 +1,6 @@
 # Social short
 
-A 15–45 second short for a feed, usually vertical. People decide in the first second whether to keep watching, and
+A 45 second to 3 minute short for a feed, usually vertical. People decide in the first second whether to keep watching, and
 most watch with the sound off. The owner reviews each stage in the studio (`.mortiflix/GATES.md`).
 
 Skills: `motion-design`, `remotion-motion`, `voiceover` (only if the brief wants narration), `final-pass`.
@@ -19,6 +19,7 @@ Skills: `motion-design`, `remotion-motion`, `voiceover` (only if the brief wants
 |---|---|---|
 | `brief` | questions | Restate the message in one line and the hook you'd open with. Ask about tone, the CTA, music, narration, each with a default. |
 | `style-frames` | frames | The on-screen script (as a text item: every line with its time) plus 2–3 full-resolution stills: the hook frame, a middle frame, the CTA card. |
+| `transitions` | frames | The transition-board skill: for every cut between consecutive scenes, the carrier (the object or element that makes it happen), why, a transition from the remotion-transitions library (or a new one inspired by it), its length and the word it lands on. `board.mjs check` passes; submit one panel per cut (outgoing frame, real in-betweens, incoming frame, the library's preview) and `BOARD.md`. The approved board is the cut list from here on. |
 | `final` | video | Animate, mix (if there's sound), `qc.mjs` with the brief's size and length, look at the sheet. Submit the video and the sheet. |
 
 ## Status lines

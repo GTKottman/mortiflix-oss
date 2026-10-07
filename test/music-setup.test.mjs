@@ -148,3 +148,45 @@ drums: cue(note("36 42 36 42 36 42 36 42").s("sine").decay(.1).sustain(0).veloci
   assert.equal(run('midi').status, 0);
   assert.ok(existsSync(join(dir, 'out/music/midi/CUE-SHEET.md')));
 });
+
+test('transition board: every cut is carried, chosen from the library (or inspired by it), in order', (t) => {
+  const lib = mkdtempSync(join(tmpdir(), 'mfx-lib-'));
+  const work = mkdtempSync(join(tmpdir(), 'mfx-board-'));
+  t.after(() => { rmSync(lib, { recursive: true, force: true }); rmSync(work, { recursive: true, force: true }); });
+  const entry = (id, family, params = []) => ({ id, name: id, family, subfamily: 'x', path: `transitions/${family}/x/${id}`, summary: id, uses: [],
+    facets: { structure: 'direct', origin: 'whole-frame', function: ['continuity'] }, duration: { default: 20, min: 10, max: 40 }, requires: [], params, media: {} });
+  writeFileSync(join(lib, 'catalog.json'), JSON.stringify({ mediaBase: 'x', transitions: [entry('crossfade', '02-blend'), entry('liquid-fill', '04-cover', [{ name: 'color' }])] }));
+  mkdirSync(join(work, 'transitions'));
+  // Real frames: the scenes (detailed test patterns on a dark background), an in-between that still shows them, a flood and a flash.
+  const ff = (src, out) => spawnSync('ffmpeg', ['-loglevel', 'error', '-y', '-f', 'lavfi', '-i', src, '-frames:v', '1', join(work, out)]);
+  for (const f of ['a.png', 'b.png', 'c.png', 'mid.png']) ff('testsrc2=s=320x180', f);
+  ff('color=c=0x3D1F8F:s=320x180', 'flood.png');
+  ff('color=c=white:s=320x180', 'flash.png');
+  const tool = join(REPO, 'pipelines/_shared/skills/transition-board/board.mjs');
+  const check = (cuts) => {
+    writeFileSync(join(work, 'transitions', 'board.json'), JSON.stringify({ cuts }));
+    return spawnSync('node', [tool, 'check'], { cwd: work, env: { ...process.env, MFX_TRANSITIONS: lib }, encoding: 'utf8' });
+  };
+  const good = [
+    { from: 'A', to: 'B', a: 'a.png', b: 'b.png', carrier: 'the price tag', why: 'the cost dissolves into the promise', transition: 'liquid-fill', params: { color: '#000' }, frames: 30, lands_on: '"Now"', strip: ['mid.png'] },
+    { from: 'B', to: 'C', a: 'b.png', b: 'c.png', carrier: 'the terminal window', why: 'the same idea, carried on to the next step', transition: 'crossfade', frames: 20, lands_on: '"Then"', strip: ['mid.png'] },
+  ];
+  const ok = check(good);
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  const bad = check([{ ...good[0], carrier: '', frames: 90 }, { ...good[1], from: 'X', transition: 'warp-drive' }]);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stdout, /name the carrier/);
+  assert.match(bad.stdout, /outside liquid-fill's range/);
+  assert.match(bad.stdout, /doesn't start where cut 1 ended/);
+  assert.match(bad.stdout, /"warp-drive" isn't in the library/);
+  // The screen never goes blank: a flood of a colour neither scene has, or a white flash, fails.
+  const flooded = check([{ ...good[0], strip: ['mid.png', 'flood.png'] }]);
+  assert.match(flooded.stdout, /flood\.png floods with one colour/);
+  assert.match(check([{ ...good[0], strip: ['flash.png'] }]).stdout, /blown out to white/);
+  assert.match(check([{ ...good[0], strip: undefined }]).stdout, /render "strip"/);
+  const invented = check([{ ...good[0], transition: { new: 'price-melt', inspired_by: ['liquid-fill'] } }]);
+  assert.match(invented.stdout, /needs its code in video\/src\/transitions\/price-melt/);
+  mkdirSync(join(work, 'video', 'src', 'transitions', 'price-melt'), { recursive: true });
+  writeFileSync(join(work, 'video', 'src', 'transitions', 'price-melt', 'index.tsx'), 'export default {}');
+  assert.equal(check([{ ...good[0], transition: { new: 'price-melt', inspired_by: ['liquid-fill'] } }]).status, 0);
+});

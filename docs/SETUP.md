@@ -10,6 +10,7 @@ never system-wide and never as root. Deleting `tools/` removes it all.
 | Part | Why | What it installs | Size |
 |---|---|---|---|
 | **Claude** | Claude does the work: writing, design, animation, checks | nothing (your Claude Code login), or your Anthropic API key in `secrets.json` | |
+| **Transitions** | every cut is designed on the transition board, from a library of 50 | the remotion-transitions library, into `tools/remotion-transitions` | ~5 MB |
 | **Narration** | a voice reads the script; the animation is timed to its words | an ElevenLabs key, **or** ComfyUI + the TTS Audio Suite (Qwen3-TTS) on your NVIDIA card, **or** nothing | ComfyUI ~10 GB with models |
 | **Music** | an original score, written to the approved animatic | Strudel (`@strudel/web` from npm) and a headless Chrome (yours is reused) | ~20 MB (+~100 MB without Chrome) |
 | **Assets** | stock assets from sites you already use, in your own Chrome | browser-harness (browser-use, via uv) and the list of your sites | ~60 MB |

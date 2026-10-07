@@ -6,6 +6,7 @@
   "shared_skills": [
     "motion-design",
     "remotion-motion",
+    "transition-board",
     "voiceover",
     "music",
     "final-pass"
@@ -111,6 +112,19 @@
       "describe": "Three to five finished-quality stills that fix the look. Runs beside the script."
     },
     {
+      "key": "transitions",
+      "name": "Transition board",
+      "review": "frames",
+      "work": [
+        "motion"
+      ],
+      "describe": "How each style frame becomes the next: for every cut, the object that carries it, the reason, a transition from the remotion-transitions library (or a new one inspired by it), and real in-between frames.",
+      "after": [
+        "script",
+        "style-frames"
+      ]
+    },
+    {
       "key": "animatic",
       "name": "Animatic",
       "review": "video",
@@ -119,8 +133,7 @@
         "audio"
       ],
       "after": [
-        "script",
-        "style-frames"
+        "transitions"
       ],
       "describe": "Every beat timed to the narration with simple motion in the approved look. No music yet: the score is written to this timing next."
     },
@@ -174,7 +187,8 @@
     "animatic": "Timing every beat",
     "build": "Animating the final",
     "qc": "Watching every frame before you do",
-    "deliver": "Packaging your video"
+    "deliver": "Packaging your video",
+    "transitions": "Designing every cut"
   },
   "checks": [
     {
@@ -269,6 +283,14 @@
         "music"
       ],
       "how": "In the mix, the music is about 18 dB under the voice while it speaks (sidechain ducking), and the score's busiest writing avoids the narration's busiest moments. Every word stays intelligible: check the loudest music passage under speech."
+    },
+    {
+      "id": "transitions-carried",
+      "title": "Every cut is carried and chosen",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "node .claude/skills/transition-board/board.mjs check passes: every cut names its carrier (the object or element that makes it happen) and why, uses a transition from the remotion-transitions library (or a new one that names the library transitions that inspired it) at a length inside its range, and lands on a named word. The video's cuts match the approved board."
     }
   ]
 }
