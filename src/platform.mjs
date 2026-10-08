@@ -131,8 +131,11 @@ function gitCygpath(p) {
 
 export function restrictToOwner(file, { platform = process.platform, env = process.env, run = spawnSync } = {}) {
   if (platform !== 'win32') { chmodSync(file, 0o600); return true; }
-  // The file mode means nothing on Windows: drop inherited permissions and grant only the current user.
-  const user = envGet(env, 'USERDOMAIN') && envGet(env, 'USERNAME') ? `${envGet(env, 'USERDOMAIN')}\\${envGet(env, 'USERNAME')}` : envGet(env, 'USERNAME');
+  // The file mode means nothing on Windows: drop inherited permissions and grant only the current user. The user is
+  // named by their SID: USERDOMAIN can be the workgroup (seen over SSH), and icacls refuses "WORKGROUP\you" outright.
+  const who = run('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true });
+  const sid = String(who?.stdout || '').match(/"(S-1-[\d-]+)"/)?.[1];
+  const user = sid ? `*${sid}` : envGet(env, 'USERDOMAIN') && envGet(env, 'USERNAME') ? `${envGet(env, 'USERDOMAIN')}\\${envGet(env, 'USERNAME')}` : envGet(env, 'USERNAME');
   if (!user) return false;
   const r = run('icacls', [file, '/inheritance:r', '/grant:r', `${user}:F`], { stdio: 'ignore', windowsHide: true });
   return r.status === 0;

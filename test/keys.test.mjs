@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { ipcPath } from '../src/platform.mjs';
 import { randomBytes } from 'node:crypto';
 import { request } from 'node:http';
 import { tempStudio } from './helpers.mjs';
@@ -17,7 +18,8 @@ import { startServer } from '../src/web/server.mjs';
 // Keys from the machine running the tests must not count as "set".
 for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_PROFILE', 'ELEVENLABS_API_KEY']) delete process.env[k];
 
-const mode = (f) => statSync(f).mode & 0o777;
+// Windows has no file modes (scripts/windows-smoke.mjs checks the ACL there instead): there, only that it's there.
+const assertMode = (f, want) => { const m = statSync(f).mode & 0o777; if (process.platform !== 'win32') assert.equal(m, want, f); };
 
 test('keys: which a project needs follows the backend and the narration engine', (t) => {
   const root = tempStudio(t);
@@ -35,9 +37,9 @@ test('keys: which a project needs follows the backend and the narration engine',
 
 test('keys: saved mode 600, reported by where they come from, never by value', (t) => {
   const root = tempStudio(t);
-  assert.equal(mode(root), 0o700);
+  assertMode(root, 0o700);
   keys.saveKey(root, 'elevenlabs', '  xi-secret  ');
-  assert.equal(mode(paths(root).secrets), 0o600);
+  assertMode(paths(root).secrets, 0o600);
   assert.equal(keys.keySource(root, 'elevenlabs'), 'saved');
   assert.equal(sessionVoiceEnv(root).ELEVENLABS_API_KEY, undefined); // narration is off: sessions don't get it
   saveVoice(root, { engine: 'elevenlabs' });
@@ -53,7 +55,7 @@ test('keys: other keys go to session.env (mode 600), with names checked', (t) =>
   const root = tempStudio(t);
   keys.setSessionKey(root, 'GEMINI_API_KEY', 'g-secret');
   keys.setSessionKey(root, 'OTHER_KEY', 'o-secret');
-  assert.equal(mode(paths(root).sessionEnv), 0o600);
+  assertMode(paths(root).sessionEnv, 0o600);
   assert.deepEqual(readSessionEnv(root), { GEMINI_API_KEY: 'g-secret', OTHER_KEY: 'o-secret' });
   assert.deepEqual(keys.sessionKeyNames(root), ['GEMINI_API_KEY', 'OTHER_KEY']);
   keys.setSessionKey(root, 'OTHER_KEY', '');
@@ -108,7 +110,7 @@ function call(socketPath, method, path, body) {
 test('web: a project that needs a key says which before it starts; keys are set but never shown', async (t) => {
   const root = tempStudio(t, { backend: 'claude-code' });
   saveVoice(root, { engine: 'elevenlabs' });
-  const socketPath = join(tmpdir(), `mfx-keys-${randomBytes(4).toString('hex')}.sock`);
+  const socketPath = ipcPath(`mfx-keys-${randomBytes(4).toString('hex')}`, { tmp: tmpdir() });
   const srv = await startServer(root, { socketPath, quiet: true, runner: false });
   t.after(() => srv.close());
   const s = (...a) => call(socketPath, ...a);

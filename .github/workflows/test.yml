@@ -39,6 +39,7 @@ jobs:
           }
           ffmpeg -version | Select-Object -First 1
       - run: npm ci
+      - run: npm test
       - run: node scripts/windows-smoke.mjs
         env:
           SMOKE_REMOTION: '1'

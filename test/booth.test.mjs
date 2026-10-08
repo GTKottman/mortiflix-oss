@@ -6,6 +6,7 @@ import { request } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { ipcPath } from '../src/platform.mjs';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { tempStudio } from './helpers.mjs';
@@ -143,7 +144,7 @@ function call(socketPath, method, path, { body, raw } = {}) {
 
 test('booth: the web API records, keeps, plays back and hands over', async (t) => {
   const { root, id } = projectWithScript(t);
-  const socketPath = join(tmpdir(), `mfx-booth-${randomBytes(4).toString('hex')}.sock`);
+  const socketPath = ipcPath(`mfx-booth-${randomBytes(4).toString('hex')}`, { tmp: tmpdir() });
   const srv = await startServer(root, { socketPath, quiet: true });
   t.after(() => srv.close());
   const s = (...a) => call(socketPath, ...a);

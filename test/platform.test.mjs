@@ -111,10 +111,14 @@ test('sessions on Windows: a named pipe for the bridge, one PATH key, Git Bash p
   assert.deepEqual(calls, [['taskkill', ['/T', '/F', '/PID', '4242']]]);
 });
 
-test('secrets on Windows get an ACL for the current user alone', () => {
-  const calls = [];
-  const ok = plat.restrictToOwner('C:\\Users\\ada\\Mortiflix\\secrets.json.tmp', { platform: 'win32', env: { USERDOMAIN: 'LAPPY', USERNAME: 'ada' }, run: (...a) => { calls.push(a.slice(0, 2)); return { status: 0 }; } });
-  assert.equal(ok, true);
-  assert.deepEqual(calls, [['icacls', ['C:\\Users\\ada\\Mortiflix\\secrets.json.tmp', '/inheritance:r', '/grant:r', 'LAPPY\\ada:F']]]);
-  assert.equal(plat.restrictToOwner('x', { platform: 'win32', env: {}, run: () => ({ status: 0 }) }), false);
+test('secrets on Windows get an ACL for the current user alone, named by SID', () => {
+  const file = 'C:\\Users\\ada\\Mortiflix\\secrets.json.tmp';
+  const icacls = (run) => { const calls = []; const ok = plat.restrictToOwner(file, { platform: 'win32', env: { USERDOMAIN: 'WORKGROUP', USERNAME: 'ada' }, run: (...a) => { calls.push(a.slice(0, 2)); return run(a[0]); } }); return { ok, calls: calls.filter(([f]) => f === 'icacls') }; };
+  // Over SSH USERDOMAIN is the workgroup, which icacls can't map: the SID from whoami is used instead.
+  const sid = icacls((f) => (f === 'whoami' ? { status: 0, stdout: '"lappy\\ada","S-1-5-21-1-2-3-1000"\r\n' } : { status: 0 }));
+  assert.equal(sid.ok, true);
+  assert.deepEqual(sid.calls, [['icacls', [file, '/inheritance:r', '/grant:r', '*S-1-5-21-1-2-3-1000:F']]]);
+  // Without whoami, the name from the environment.
+  assert.deepEqual(icacls((f) => (f === 'whoami' ? { status: 1, stdout: '' } : { status: 0 })).calls[0][1][3], 'WORKGROUP\\ada:F');
+  assert.equal(plat.restrictToOwner('x', { platform: 'win32', env: {}, run: () => ({ status: 1 }) }), false);
 });

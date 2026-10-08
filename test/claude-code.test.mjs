@@ -126,7 +126,7 @@ test('the plugin: valid manifests, owner-only skill, and every command it names 
   assert.equal(plugin.name, 'mortiflix');
   assert.equal(plugin.version, JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8')).version);
 
-  const skill = readFileSync(join(REPO, 'plugin', 'skills', 'mortiflix', 'SKILL.md'), 'utf8');
+  const skill = readFileSync(join(REPO, 'plugin', 'skills', 'mortiflix', 'SKILL.md'), 'utf8').replaceAll('\r\n', '\n'); // Git for Windows checks out CRLF
   const front = skill.match(/^---\n([\s\S]*?)\n---\n/)[1];
   assert.match(front, /^name: mortiflix$/m);
   // Typed by the owner only: a studio session (also Claude Code) must never pick it up by itself.
@@ -139,7 +139,8 @@ test('the plugin: valid manifests, owner-only skill, and every command it names 
   for (const [, cmd] of text.matchAll(/`mortiflix ([a-z]+)/g)) assert.ok(known.has(cmd), `the skill names "mortiflix ${cmd}", which the CLI doesn't have`);
 });
 
-test('a claude-code session: its own Claude Code, the prompt on stdin, mfx first on its PATH', async (t) => {
+// The fake claude is a shell script; on Windows scripts/windows-smoke.mjs runs a session with its own fake.
+test('a claude-code session: its own Claude Code, the prompt on stdin, mfx first on its PATH', { skip: process.platform === 'win32' && 'covered by scripts/windows-smoke.mjs on Windows' }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'mfx-cc-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const fake = join(dir, 'claude');

@@ -66,15 +66,21 @@ Claude Code are ordinary programs: remove them in Settings › Apps, or `winget 
 
 ## What's left
 
-Found by reading the code for Linux-only assumptions. Checked items are done. "CI" means
-`scripts/windows-smoke.mjs` proves it on GitHub's `windows-latest` for every push (`.github/workflows/test.yml`).
+Found by reading the code for Linux-only assumptions, then by running it on Windows. Checked items are done. "CI"
+means `npm test` and `scripts/windows-smoke.mjs` prove it on GitHub's `windows-latest` for every push
+(`.github/workflows/test.yml`). "Fresh Windows" means a new, untouched Windows 11 Pro (a local VM), where scripts
+run under Windows' default policy and nothing was set up by hand.
 
 **Installing**
 - [x] `install.ps1`: prerequisites with winget, Claude Code, clone/update, `npm link`, `mortiflix init`
 - [x] `src/platform.mjs`: finding programs (PATHEXT), running `.cmd` programs, Windows' tar, Git Bash, opening files
 - [x] `mortiflix setup`: the repository path (`file:///C:/…`), tar, npm/npx, Edge, hidden ComfyUI window
 - [x] `mortiflix doctor`: Git Bash, git, and winget hints
-- [ ] Run the installer and every setup part on a real Windows 10 and 11 machine
+- [x] The one-line installer on fresh Windows: prerequisites, Claude Code, clone, `npm link`. It found two things CI
+      couldn't: `npm link`'s `mortiflix.ps1` is refused by PowerShell's default policy (the installer now keeps
+      only `mortiflix.cmd`), and Anthropic's installer left `%USERPROFILE%\.local\bin` off the PATH (the installer
+      now adds it, so `claude` and the sessions find Claude Code in new windows).
+- [ ] Every `mortiflix setup` part on fresh Windows, and the installer on Windows 10
 
 **Running sessions**
 - [x] The bridge listens on a named pipe (`\\.\pipe\mfx-…`, `ipcPath`). CI.
@@ -90,8 +96,10 @@ Found by reading the code for Linux-only assumptions. Checked items are done. "C
       own folders (`/tmp/…`) through its `cygpath`. CI.
 - [x] The Remotion template links `node_modules` with a junction (no Developer Mode or admin), runs npm through a
       shell, and waits without `sleep`. CI installs it and renders 15 frames of the template.
-- [x] `secrets.json` and `session.env` get an ACL for you alone (`icacls`; Windows always keeps SYSTEM and
-      Administrators). CI.
+- [x] `secrets.json` and `session.env` get an ACL for you alone (`icacls`, naming you by SID: `USERDOMAIN` can be
+      the workgroup, which icacls refuses). CI and fresh Windows.
+- [x] `npm test` passes on Windows: the voice-over build (its ffmpeg list), `mortiflix music` (the engine's
+      `import()` takes a file URL) and the API editor (a link to a place that isn't there is refused). CI.
 - [ ] A whole video made by **real** Claude (the `claude-code` and `anthropic-api` backends) on a Windows PC
 - [ ] The terminal recording booth (`mortiflix record`, ffmpeg's dshow input) with a real microphone
 - [ ] Nova FX's C core: build with MSVC or MinGW (it uses OpenMP and Vulkan)

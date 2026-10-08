@@ -13,11 +13,13 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync, readdirSync } from 'node:fs';
 import { join, extname, basename } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { REPO, UserError, writeJson } from './studio.mjs';
 import { projectPaths, loadProject, event, now } from './projects.mjs';
 import { zip, dirEntries } from './zip.mjs';
 
-const engine = (name) => import(join(REPO, 'pipelines', '_shared', 'skills', 'music', 'lib', name));
+// A file URL: import() reads a plain C:\... path as a URL with the scheme "c:" and refuses it.
+const engine = (name) => import(pathToFileURL(join(REPO, 'pipelines', '_shared', 'skills', 'music', 'lib', name)).href);
 export const MAX_MASTER_BYTES = 1024 * 1024 * 1024;
 export const AUDIO_EXT = ['.wav', '.aif', '.aiff', '.flac', '.mp3', '.m4a', '.ogg'];
 

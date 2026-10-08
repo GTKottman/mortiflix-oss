@@ -13,7 +13,7 @@
 // The voice comes from the studio's settings ($MFX_VOICE); keys are in the environment, never printed.
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
-import { join, extname } from 'node:path';
+import { join, extname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
@@ -299,7 +299,7 @@ function build() {
       t += gap;
     }
   }
-  writeFileSync(join(OUT, 'build', 'list.txt'), parts.map((p) => `file '${p.replace(/^voice\/build\//, '')}'`).join('\n') + '\n');
+  writeFileSync(join(OUT, 'build', 'list.txt'), parts.map((p) => `file '${basename(p)}'`).join('\n') + '\n');
   run(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', join(OUT, 'build', 'list.txt'), '-c', 'pcm_s16le', join(OUT, 'voice.wav')]);
   writeFileSync(join(OUT, 'timing.json'), JSON.stringify({ seconds: r3(t), lines: timing }, null, 2));
   console.log(`voice/voice.wav: ${t.toFixed(2)} s, ${timing.length} lines → voice/timing.json`);

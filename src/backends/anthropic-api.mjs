@@ -4,7 +4,7 @@
 // server-side compaction; the stable prefix is prompt-cached.
 import Anthropic from '@anthropic-ai/sdk';
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, statSync, readdirSync } from 'node:fs';
+import { createWriteStream, existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, statSync, lstatSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, extname, relative } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { REPO, readSecret, isInside } from '../studio.mjs';
@@ -228,7 +228,7 @@ const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image
 
 export function editorTool(work, input, onActivity = () => {}) {
   const { command } = input || {};
-  const target = confine(work, input?.path, command === 'create');
+  const target = confine(work, input?.path);
   const rel = relative(work, target) || '.';
   if (command === 'view') {
     onActivity({ kind: 'tool', text: `View ${rel}` });
@@ -281,14 +281,19 @@ export function editorTool(work, input, onActivity = () => {}) {
 }
 
 // Resolve a model-supplied path and refuse anything outside the project folder (.., absolute paths, symlinks).
-export function confine(work, path, creating = false) {
+const present = (p) => { try { lstatSync(p); return true; } catch { return false; } };
+
+export function confine(work, path) {
   if (typeof path !== 'string' || !path) throw new Error('path is required');
   // Paths from the shell on Windows are Git Bash's (/c/Users/…): read them as the C:\Users\… they are.
   const abs = resolve(work, fromShellPath(path));
+  // The nearest part of the path that's there, links included (a link to somewhere that doesn't exist is still
+  // there: existsSync follows links and would skip past it, and a later mkdir or write would go where it points).
   let probe = abs;
-  if (creating) while (!existsSync(probe)) probe = dirname(probe);
-  const real = existsSync(probe) ? realpathSync(probe) : probe;
-  if (!isInside(work, real) || !isInside(work, abs)) throw new Error(`${path} is outside the project folder`);
+  while (!present(probe) && dirname(probe) !== probe) probe = dirname(probe);
+  let real;
+  try { real = realpathSync(probe); } catch { real = null; }
+  if (!real || !isInside(work, real) || !isInside(work, abs)) throw new Error(`${path} is outside the project folder`);
   return abs;
 }
 

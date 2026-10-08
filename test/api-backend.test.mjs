@@ -96,9 +96,12 @@ test('editor stays inside the project folder', (t) => {
   writeFileSync(join(work, 'a', 'f.txt'), 'one\ntwo\n');
   assert.throws(() => confine(work, '../x'), /outside/);
   assert.throws(() => confine(work, '/etc/passwd'), /outside/);
-  symlinkSync('/etc', join(work, 'link'));
+  symlinkSync(tmpdir(), join(work, 'link'), 'dir'); // a folder that's there on every system, outside the project
   assert.throws(() => confine(work, 'link/passwd'), /outside/);
-  assert.throws(() => confine(work, 'link/new.txt', true), /outside/);
+  assert.throws(() => confine(work, 'link/new.txt'), /outside/);
+  // A link to a place that isn't there yet is refused too: a later mkdir or write would follow it.
+  symlinkSync(join(tmpdir(), `mfx-nowhere-${process.pid}`), join(work, 'dangling'), 'dir');
+  assert.throws(() => confine(work, 'dangling/new.txt'), /outside/);
   assert.match(editorTool(work, { command: 'view', path: 'a/f.txt' }).content, /1\tone/);
   assert.equal(editorTool(work, { command: 'str_replace', path: 'a/f.txt', old_str: 'zzz', new_str: 'x' }).error, true);
   editorTool(work, { command: 'str_replace', path: 'a/f.txt', old_str: 'two', new_str: 'deux' });

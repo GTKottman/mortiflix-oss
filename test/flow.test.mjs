@@ -76,7 +76,9 @@ test('a backend that never moves the project forward gets it paused, not looped'
 test('renderPrefix wraps every mfx render (a machine-wide queue)', async (t) => {
   const root = tempStudio(t);
   const { saveConfig } = await import('../src/studio.mjs');
-  saveConfig(root, { renderPrefix: ['sh', '-c', 'echo "wrapped:{label}" && exec "$@"', 'wrap'] });
+  // node, not sh: Windows has no sh on its PATH. `node -e code a b` sees a b as process.argv[1..].
+  const wrap = 'console.log("wrapped:{label}"); process.exit(require("node:child_process").spawnSync(process.argv[1], process.argv.slice(2), { stdio: "inherit" }).status)';
+  saveConfig(root, { renderPrefix: ['node', '-e', wrap] });
   const p = createProject(root, { pipeline: 'logo-sting', title: 'Wrap' });
   await addIntakeFile(root, p.id, { field: 'logo', name: 'l.svg', buffer: Buffer.from('<svg/>') });
   startProject(root, p.id);
@@ -86,7 +88,7 @@ test('renderPrefix wraps every mfx render (a machine-wide queue)', async (t) => 
   const renders = new RenderQueue({ logDir: join(root, 'run') });
   const bridge = await openBridge({ root, projectId: p.id, sessionId: 's1', workdir: projectPaths(root, p.id).work, renders, sessionEnv: {} });
   t.after(() => bridge.close());
-  const job = await callStudio('render', { label: 'still', argv: ['echo', 'inner'], cwd: projectPaths(root, p.id).work }, bridge.env);
+  const job = await callStudio('render', { label: 'still', argv: ['node', '-e', 'console.log("inner")'], cwd: projectPaths(root, p.id).work }, bridge.env);
   let r = job;
   while (!['done', 'failed'].includes(r.state)) r = await callStudio('render-wait', { id: job.id, seconds: 5 }, bridge.env);
   assert.equal(r.state, 'done');

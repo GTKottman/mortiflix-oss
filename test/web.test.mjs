@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { request } from 'node:http';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { ipcPath } from '../src/platform.mjs';
 import { randomBytes } from 'node:crypto';
 import { tempStudio } from './helpers.mjs';
 import { startServer } from '../src/web/server.mjs';
@@ -38,7 +39,7 @@ const until = async (fn, ms = 5000) => {
 
 test('web: create, upload, start, review, media and the guards', async (t) => {
   const root = tempStudio(t);
-  const socketPath = join(tmpdir(), `mfx-web-${randomBytes(4).toString('hex')}.sock`);
+  const socketPath = ipcPath(`mfx-web-${randomBytes(4).toString('hex')}`, { tmp: tmpdir() });
   const srv = await startServer(root, { socketPath, quiet: true });
   t.after(() => srv.close());
   const s = (...a) => call(socketPath, ...a);
@@ -100,7 +101,7 @@ test('web: the Music panel hands over the MIDI pack and takes the owner\'s maste
   const { createProject, startProject, projectPaths } = await import('../src/projects.mjs');
   const gates = await import('../src/gates.mjs');
   const root = tempStudio(t);
-  const socketPath = join(tmpdir(), `mfx-web-${randomBytes(4).toString('hex')}.sock`);
+  const socketPath = ipcPath(`mfx-web-${randomBytes(4).toString('hex')}`, { tmp: tmpdir() });
   const srv = await startServer(root, { socketPath, quiet: true, runner: false });
   t.after(() => srv.close());
   const s = (...a) => call(socketPath, ...a);

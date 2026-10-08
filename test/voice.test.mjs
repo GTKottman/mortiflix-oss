@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'no
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tempStudio } from './helpers.mjs';
 import { requestBody, voiceSettings, ElevenLabs } from '../src/voice/elevenlabs.mjs';
 import { recommend, ComfyUI, speakGraph } from '../src/voice/qwen.mjs';
@@ -110,7 +110,7 @@ function voFixture(t) {
     { id: 'b01-1', text: '[warm] Every city has a heartbeat.', script: 'Every city has a heartbeat.', gap_after: 0.5 },
     { id: 'b01-2', text: 'Ours runs on bikes, all night long.' },
   ]));
-  const run = (args, voice) => spawnSync('node', ['--import', FAKE, VO, ...args], {
+  const run = (args, voice) => spawnSync('node', ['--import', pathToFileURL(FAKE).href, VO, ...args], {
     cwd: dir, encoding: 'utf8',
     env: { ...process.env, MFX_HOME: REPO, MFX_VOICE: JSON.stringify(voice), ELEVENLABS_API_KEY: 'k', FAKE_WAV: join(dir, 'tone.wav'), FAKE_LOG: join(dir, 'log.jsonl') },
   });

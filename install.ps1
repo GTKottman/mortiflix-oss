@@ -50,6 +50,15 @@ function Install-Mortiflix {
     $env:Path = (@($machine, $user) + $extra | Where-Object { $_ }) -join ';'
   }
 
+  # Anthropic's installer puts claude.exe in %USERPROFILE%\.local\bin without always adding that folder to your PATH;
+  # then new windows (and Mortiflix's sessions) can't find it. Add it to your own PATH, once.
+  function Add-UserPath([string]$Dir) {
+    $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if (@($user -split ';' | ForEach-Object { $_.TrimEnd('\') }) -contains $Dir.TrimEnd('\')) { return }
+    [Environment]::SetEnvironmentVariable('Path', ((@($user, $Dir) | Where-Object { $_ }) -join ';'), 'User')
+    Say "  Added $Dir to your PATH"
+  }
+
   function Find([string]$Name) {
     $c = Get-Command $Name -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($c) { return $c.Source }
@@ -115,12 +124,16 @@ function Install-Mortiflix {
     } else { Missing 'skipped: videos can''t render until ffmpeg is installed (winget install Gyan.FFmpeg)' }
   }
 
-  if (Find 'claude') { Ok 'Claude Code' }
-  else {
+  $claudeDir = Join-Path $env:USERPROFILE '.local\bin'
+  if (Find 'claude') {
+    if (Test-Path (Join-Path $claudeDir 'claude.exe')) { Add-UserPath $claudeDir }
+    Ok 'Claude Code'
+  } else {
     Missing 'Claude Code: does the work with your Claude plan (or use an Anthropic API key instead, asked for later)'
     if (Ask '  Install Claude Code with Anthropic''s installer (claude.ai/install.ps1)?') {
       # In its own PowerShell, so nothing it does (an `exit`, its variables) reaches this install.
       Run 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'irm https://claude.ai/install.ps1 | iex')
+      if (Test-Path (Join-Path $claudeDir 'claude.exe')) { Add-UserPath $claudeDir }
       Update-Path
       if (Find 'claude') { Ok 'Claude Code: run "claude" once to log in' } else { Missing 'Claude Code installed: open a new PowerShell window and run "claude" once to log in' }
     } else { Say '  Skipped: Mortiflix can use an Anthropic API key, or the free demo backend.' }
@@ -143,6 +156,9 @@ function Install-Mortiflix {
     Run 'npm.cmd' @('install', '--no-audit', '--no-fund', '--loglevel=error')
     Run 'npm.cmd' @('link', '--no-audit', '--no-fund', '--loglevel=error')
   } finally { Pop-Location }
+  # npm link also writes mortiflix.ps1, which PowerShell picks over mortiflix.cmd, and Windows' default script
+  # policy (Restricted) refuses to run it. The .cmd works under every policy, so keep only that one.
+  foreach ($bin in 'mortiflix', 'mfx') { Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $env:APPDATA "npm\$bin.ps1") }
   Update-Path
   $mfx = Find 'mortiflix'
   if (-not $mfx) { Fail "npm link finished but mortiflix isn't on the PATH: add $(Join-Path $env:APPDATA 'npm') to your PATH, or run: node `"$Dir\bin\mortiflix`"" }

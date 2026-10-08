@@ -34,7 +34,7 @@ test('submit enforces items, checks, folder and review mode', async (t) => {
   assert.throws(() => gates.submit(root, id, 'directions', { ...ok, error_checks: [] }), /missing/);
   assert.throws(() => gates.submit(root, id, 'directions', { ...ok, error_checks: [...ok.error_checks.slice(1), { id: ok.error_checks[0].id, result: 'n/a' }] }), /needs a note/);
   assert.throws(() => gates.submit(root, id, 'directions', { ...ok, items: [{ path: '../../../etc/passwd' }] }), /outside|doesn't exist/);
-  symlinkSync('/etc/hostname', join(work, 'out', 'sneaky.png'));
+  symlinkSync(process.execPath, join(work, 'out', 'sneaky.png')); // a file that's there on every system, outside the project
   assert.throws(() => gates.submit(root, id, 'directions', { ...ok, items: [{ path: 'out/sneaky.png' }] }), /outside/);
   assert.throws(() => gates.submit(root, id, 'final', ok), /can't start yet/);
 
