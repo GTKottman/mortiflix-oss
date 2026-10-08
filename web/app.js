@@ -731,6 +731,37 @@ async function setupSection() {
     }, 1200);
   };
 
+  // Publishing: which service posts a delivered video (`mortiflix publish`), and what it needs.
+  const PUBLISH = { 'Upload-Post': 'uploadpost', 'Postiz (self-hosted)': 'postiz', Off: 'none' };
+  const savePublish = async (body, done) => {
+    try { info = await api('/api/setup/publish', { method: 'PUT', body }); draw(); if (done) toast(done); } catch (e) { toast(e.message, true); }
+  };
+  const publishSetup = () => {
+    const pb = info.status.publish;
+    const label = Object.keys(PUBLISH).find((k) => PUBLISH[k] === pb.service);
+    const keyNote = pb.key ? chip(true, `key ${pb.key === 'saved' ? 'saved' : `from ${pb.key}`}`, '') : chip(false, '', 'key missing: add it below, in Keys');
+    let detail = null;
+    if (pb.service === 'uploadpost') {
+      let profile = pb.profile || '';
+      detail = h('div', null,
+        h('input', { type: 'text', placeholder: 'Upload-Post profile your accounts are under', value: profile, oninput: (e) => { profile = e.target.value; } }),
+        h('div', { class: 'actions', style: { marginTop: '8px' } },
+          h('button', { class: 'btn', onclick: () => savePublish({ profile }, 'Profile saved') }, 'Save'), keyNote),
+        h('p', { class: 'meta' }, 'Connect your accounts on upload-post.com, under a profile. Paid plans.'));
+    } else if (pb.service === 'postiz') {
+      let url = pb.postiz.url;
+      detail = h('div', null,
+        h('input', { type: 'text', inputmode: 'url', placeholder: 'http://localhost:4007/api', value: url, oninput: (e) => { url = e.target.value; } }),
+        h('div', { class: 'actions', style: { marginTop: '8px' } },
+          h('button', { class: 'btn', onclick: () => savePublish({ url }, 'Postiz address saved') }, 'Save'), keyNote),
+        h('p', { class: 'meta' }, 'Your Postiz\'s API address: the official Docker image answers at http://localhost:4007/api, Postiz Cloud at https://api.postiz.com. Install it with Docker Compose (docs.postiz.com › Self-host), then connect your accounts in it. Each platform needs a developer app you register there; TikTok keeps posts private until it has reviewed yours.'));
+    }
+    return h('div', null,
+      choiceChips(Object.keys(PUBLISH), label, (v) => savePublish({ service: PUBLISH[v] })),
+      detail,
+      pb.service === 'none' ? null : h('p', { class: 'meta' }, 'Post a delivered video from a terminal: mortiflix publish <project>. It shows the plan and asks first.'));
+  };
+
   function draw() {
     const st = info.status;
     const part = (id) => info.parts.find((x) => x.id === id);
@@ -761,6 +792,7 @@ async function setupSection() {
           st['browser-harness'].ok && info.recordings ? h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: /enabled/i.test(info.recordings) && !/disabled/i.test(info.recordings), onchange: async (e) => { info = await api('/api/setup/recordings', { method: 'PUT', body: { enable: e.target.checked } }); draw(); } }),
             'Keep local browser recordings (screenshots and traces of what sessions do, on this machine only)') : null,
           h('p', { class: 'meta' }, 'Sessions use your own Chrome: sign in to these sites there. The first time, Chrome may ask you to allow remote debugging (chrome://inspect/#remote-debugging).')) : null)),
+      field(part('publish').title, h('div', null, ...intro('publish'), publishSetup())),
       field(part('3d').title, h('div', null, ...intro('3d'),
         toolRow('blender'),
         st.blender.ok ? toolRow('blender-addons') : null,

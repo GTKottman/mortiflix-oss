@@ -48,8 +48,9 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
 
   ${C.b('Publishing')}
   mortiflix publish <project> [--to tiktok,instagram,youtube] [--profile <name>] [--title "…"] [--description "…"]
-                    [--at 2026-10-20T18:00 [--timezone Europe/Madrid]] [--yes]
-                                                               post a delivered video through Upload-Post (asks first)
+                    [--at 2026-10-20T18:00 [--timezone Europe/Madrid]] [--yes] [--again]
+                                                               post a delivered video through Upload-Post or your own
+                                                               Postiz, whichever setup picked (asks first)
   mortiflix publish <project> --status                         how it went, per platform, with the links
 
   ${C.b('The web studio')}
@@ -76,8 +77,8 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
 
   ${C.b('Settings')}
   mortiflix config [key [value]]                               show or change settings
-  mortiflix keys set <anthropic|elevenlabs|uploadpost|NAME>    set one key (typed hidden, or piped on stdin)
-  mortiflix keys remove <anthropic|elevenlabs|uploadpost|NAME>
+  mortiflix keys set <anthropic|elevenlabs|uploadpost|postiz|NAME>  set one key (typed hidden, or piped on stdin)
+  mortiflix keys remove <anthropic|elevenlabs|uploadpost|postiz|NAME>
   mortiflix checks [approve|reject <id>]                       the error checklist sessions proposed
 
   --studio <dir> works with every command. --json prints what pipelines, list, status, review, keys and
@@ -86,7 +87,8 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
   ${C.b('Without a terminal')} (scripts, Claude Code)
   mortiflix setup install <${setup.TOOLS.join('|')}>
   mortiflix setup music <strudel|none> [--midi|--no-midi]
-  mortiflix setup assets <url>… | --clear`;
+  mortiflix setup assets <url>… | --clear
+  mortiflix setup publish <uploadpost|postiz|none> [--url <your Postiz>] [--profile <Upload-Post profile>]`;
 
 const LISTS = ['set', 'file', 'note', 'answer'];
 
@@ -406,18 +408,22 @@ async function publishCmd(root, given, a) {
   const opt = (k) => (typeof a[k] === 'string' ? a[k] : undefined);
   if (a.status) {
     const st = await pub.publishStatus(root, id);
-    console.log(`${C.b(st.status)}${st.message ? C.dim(` · ${st.message}`) : ''}  ${C.dim(st.job_id ? `job ${st.job_id}` : `request ${st.request_id}`)}`);
+    console.log(`${C.b(st.status)}${st.message ? C.dim(` · ${st.message}`) : ''}  ${C.dim(st.ref)}`);
     for (const r of st.results) {
       const icon = { completed: C.green('✔'), failed: C.red('✖') }[r.state] || C.acc('●');
-      console.log(`  ${icon} ${r.platform.padEnd(10)} ${r.url || C.dim(r.message || r.state)}`);
+      console.log(`  ${icon} ${String(r.platform || '?').padEnd(10)} ${r.url || C.dim(r.message || r.state)}`);
     }
     if (!st.results.length) console.log(C.dim(st.scheduled_for ? `  Scheduled for ${st.scheduled_for}.` : '  Nothing back from the platforms yet.'));
     return;
   }
-  const plan = pub.publishPlan(root, id, { to: opt('to'), profile: opt('profile'), title: opt('title'), description: opt('description'), at: opt('at'), timezone: opt('timezone') });
+  let plan = pub.publishPlan(root, id, { to: opt('to'), profile: opt('profile'), title: opt('title'), description: opt('description'), at: opt('at'), timezone: opt('timezone'), again: Boolean(a.again) });
+  // Postiz posts to the channels connected in it: look them up first, so the plan names every account.
+  if (plan.service === 'postiz') plan = await pub.postizChannels(root, plan);
   console.log(`\n${C.b(plan.project)}  ${C.dim(`${(plan.size / 1024 ** 2).toFixed(1)} MB`)}`);
+  console.log(`  Via     ${pub.SERVICES[plan.service].name}${plan.service === 'postiz' ? C.dim(` at ${pub.publishConfig(loadConfig(root)).postiz.url}`) : ''}`);
   console.log(`  To      ${plan.platforms.join(', ')}${plan.from_brief ? C.dim(' (from the brief; --to changes it)') : ''}`);
-  console.log(`  Profile ${plan.profile}`);
+  if (plan.channels) for (const c of plan.channels) console.log(`          ${C.dim(`${c.platform}:`)} ${c.name}`);
+  if (plan.profile) console.log(`  Profile ${plan.profile}`);
   console.log(`  Title   ${plan.title}`);
   if (plan.description) console.log(`  Text    ${plan.description.slice(0, 200)}`);
   console.log(`  When    ${plan.at ? `${plan.at} ${plan.timezone || 'UTC'}` : 'now'}\n`);
@@ -425,7 +431,8 @@ async function publishCmd(root, given, a) {
   if (!a.yes && !(await confirm(`Post it${plan.at ? ' at that time' : ' now'}?`))) return console.log('Nothing sent.');
   const sent = await pub.publish(root, plan);
   console.log(`${C.green('✔')} ${plan.at ? 'Scheduled' : 'Sent'}. ${C.b(`mortiflix publish ${id} --status`)} shows how it went.`);
-  console.log(C.dim(`  ${sent.job_id ? `job ${sent.job_id}` : `request ${sent.request_id}`} · also at https://app.upload-post.com`));
+  if (plan.service === 'postiz') console.log(C.dim(`  ${sent.posts.length} post${sent.posts.length === 1 ? '' : 's'} · also in your Postiz calendar`));
+  else console.log(C.dim(`  ${sent.job_id ? `job ${sent.job_id}` : `request ${sent.request_id}`} · also at https://app.upload-post.com`));
 }
 
 // Review in the terminal: what was sent, then answers, notes and a decision.
@@ -846,6 +853,31 @@ async function setupPart(root, id, st) {
     console.log(C.dim('  Sign in to them in Chrome. The first time, Chrome may ask to allow remote debugging: chrome://inspect/#remote-debugging'));
     return;
   }
+  if (id === 'publish') {
+    const cur = pub.publishConfig(loadConfig(root));
+    console.log(`  Now: ${C.b(cur.service === 'none' ? 'not set up' : cur.service === 'postiz' ? `your own Postiz at ${cur.postiz.url}` : `Upload-Post${cur.profile ? ` (profile ${cur.profile})` : ''}`)}`);
+    console.log('  1. Upload-Post: a hosted service with paid plans. You connect your accounts on upload-post.com. Needs its API key.');
+    console.log('  2. Postiz: free and open source (AGPL-3.0). You run it yourself (Docker) and connect your accounts in it.');
+    console.log(C.dim('     Install: https://docs.postiz.com/self-host/installation/docker-compose. Each platform needs a developer app you register;'));
+    console.log(C.dim('     TikTok keeps posts private until it has reviewed yours.'));
+    console.log('  3. Don\'t publish from the studio: you download finals and post them yourself.');
+    const choice = (await prompterOnce(`  Which? ${C.dim(`[Enter keeps ${cur.service}]`)} `)).trim();
+    if (choice === '3') { pub.savePublish(root, { service: 'none' }); return console.log('  Publishing off.'); }
+    if (choice === '1' || (!choice && cur.service === 'uploadpost')) {
+      pub.savePublish(root, { service: 'uploadpost' });
+      await askKey(root, 'uploadpost');
+      const profile = (await prompterOnce(`  Upload-Post profile your accounts are connected under${cur.profile ? C.dim(` (Enter keeps ${cur.profile})`) : ''}: `)).trim();
+      if (profile) pub.savePublish(root, { profile });
+      return console.log(`  ${C.green('✔')} Publishing through Upload-Post. Post a delivered video with ${C.b('mortiflix publish <project>')}.`);
+    }
+    if (choice === '2' || (!choice && cur.service === 'postiz')) {
+      const url = (await prompterOnce(`  Your Postiz API address ${C.dim(`(Enter keeps ${cur.postiz.url}; Postiz Cloud is https://api.postiz.com)`)}: `)).trim();
+      pub.savePublish(root, { service: 'postiz', url: url || undefined });
+      await askKey(root, 'postiz');
+      return console.log(`  ${C.green('✔')} Publishing through your Postiz. Post a delivered video with ${C.b('mortiflix publish <project>')}.`);
+    }
+    return undefined;
+  }
   if (id === '3d') {
     if (!(await confirm('  Set up 3D (Blender and the toolkits)?', st.blender.ok))) return console.log(C.dim('  Skipped: 2D only.'));
     if (!st.blender.ok) { if (!(await offerInstall(root, 'blender'))) return; }
@@ -871,6 +903,9 @@ async function showSetup(root) {
   row(st.transitions.ok, 'Transitions', st.transitions.ok ? `remotion-transitions: ${st.transitions.detail}` : 'library not installed (mortiflix setup transitions)');
   row(st.music.engine === 'none' ? null : st.strudel.ok && st.chrome.ok, 'Music', st.music.engine === 'none' ? 'none' : `Strudel: ${st.strudel.detail}; Chrome: ${st.chrome.ok ? 'found' : 'missing'}${st.music.midi ? '; MIDI pack on' : ''}`);
   row(st.assets.sites.length ? st['browser-harness'].ok : null, 'Assets', st.assets.sites.length ? `${st.assets.sites.map((x) => x.url).join(', ')} (browser-harness ${st['browser-harness'].ok ? st['browser-harness'].detail : 'missing'})` : 'no sites: sessions make every visual themselves');
+  const pubCfg = st.publish;
+  row(pubCfg.service === 'none' ? null : Boolean(pubCfg.key), 'Publishing', pubCfg.service === 'none' ? 'off: you post finals yourself'
+    : `${pub.SERVICES[pubCfg.service].name}${pubCfg.service === 'postiz' ? ` at ${pubCfg.postiz.url}` : pubCfg.profile ? `, profile ${pubCfg.profile}` : ''}${pubCfg.key ? '' : ', key missing'}`);
   row(st.blender.ok ? st['blender-addons'].ok : null, '3D', st.blender.ok ? `${st.blender.detail}; ${st['blender-addons'].detail}` : 'not set up');
 }
 
@@ -918,6 +953,10 @@ async function setupCmd(root, [part, ...args], a) {
     setup.saveAssetSites(root, a.clear ? [] : args);
     const now = setup.assetsConfig(loadConfig(root)).sites;
     return console.log(now.length ? `${C.green('✔')} Asset sites: ${now.map((x) => x.url).join(', ')}` : 'No asset sites.');
+  }
+  if (part === 'publish' && args.length) {
+    const c = pub.savePublish(root, { service: args[0], url: typeof a.url === 'string' ? a.url : undefined, profile: typeof a.profile === 'string' ? a.profile : undefined });
+    return console.log(c.service === 'none' ? 'Publishing off.' : `${C.green('✔')} Publishing through ${pub.SERVICES[c.service].name}${c.service === 'postiz' ? ` at ${c.postiz.url}` : ''}. Its key: mortiflix keys set ${c.service}`);
   }
   if (part === 'status' && a.json) return json(await setupView(root));
   if (part === 'status' || !process.stdin.isTTY) return showSetup(root);

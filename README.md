@@ -126,7 +126,8 @@ Mortiflix runs on your own accounts: there's nothing to sign up for. `mortiflix 
 ```
 Anthropic API key   only for the anthropic-api backend (Claude Code uses your own login)
 ElevenLabs API key  only for ElevenLabs narration, sound effects and music
-Upload-Post API key only for `mortiflix publish` (optional; sessions never get it)
+Upload-Post API key only for `mortiflix publish` through Upload-Post (optional; sessions never get it)
+Postiz API key      only for `mortiflix publish` through your own Postiz (optional; sessions never get it)
 Other keys          anything a pipeline's tools read from the environment, e.g. GEMINI_API_KEY
 ```
 
@@ -197,8 +198,17 @@ Everything goes into the studio folder, never system-wide. Full details: [docs/S
 
 ## Publishing (optional)
 
-Once you approve a final, the video is yours to download. If you'd rather post it straight from the studio, connect
-your accounts on [Upload-Post](https://upload-post.com), add its key with `mortiflix keys`, and:
+Once you approve a final, the video is yours to download. If you'd rather post it straight from the studio, pick a
+service in setup (`mortiflix setup publish`, or Settings › Setup), add its key with `mortiflix keys`:
+
+- **[Upload-Post](https://upload-post.com)**: hosted, with paid plans. Connect your accounts there, under a profile.
+- **[Postiz](https://postiz.com)**: free and open source (AGPL-3.0, like Mortiflix), on your own server or this
+  computer ([Docker Compose](https://docs.postiz.com/self-host/installation/docker-compose)). Connect your accounts in
+  it. You register a developer app with each platform yourself, and TikTok keeps posts private until it has reviewed
+  yours. Mortiflix talks to it over its API (`http://localhost:4007/api` for the official Docker image, or
+  `https://api.postiz.com` for Postiz Cloud); none of its code is bundled.
+
+Then:
 
 ```sh
 mortiflix publish <project>                                   # where the brief said (TikTok / Reels / Shorts), asks first
@@ -209,8 +219,12 @@ mortiflix publish <project> --status                          # per platform, wi
 
 Only you publish: it's a command you run, never something a session can reach (`mfx` has no way to it), and only a
 delivered project's approved final goes out. It shows what goes where and asks before sending (`--yes` skips the
-question in scripts). Running it again never posts the same video twice. `--profile` is the Upload-Post profile your
-accounts are connected under; it's remembered after the first time.
+question in scripts). Running it again never posts the same video twice (`--again` does, on purpose). With Postiz,
+the plan names each connected account it goes to. `--profile` is the Upload-Post profile your accounts are connected
+under; it's remembered after the first time.
+
+Publishing was started by [@mutonby](https://github.com/mutonby) ([#3](https://github.com/GTKottman/mortiflix-oss/pull/3)),
+who built the Upload-Post side; Postiz came after, as the free choice.
 
 ## Make your own pipeline
 

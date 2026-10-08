@@ -28,7 +28,14 @@ export const KEYS = {
     secret: 'upload_post_api_key',
     env: 'UPLOAD_POST_API_KEY',
     get: 'app.upload-post.com › API Keys',
-    for: 'publishing a delivered video to TikTok, Instagram, YouTube and others with `mortiflix publish`. Optional: nothing is ever posted on its own.',
+    for: 'publishing a delivered video to TikTok, Instagram, YouTube and others with `mortiflix publish`, when Upload-Post is your publishing service. Optional: nothing is ever posted on its own.',
+  },
+  postiz: {
+    name: 'Postiz API key',
+    secret: 'postiz_api_key',
+    env: 'POSTIZ_API_KEY',
+    get: 'your Postiz › Settings › Developers › Public API',
+    for: 'publishing a delivered video with `mortiflix publish`, when your own Postiz is your publishing service. Optional: nothing is ever posted on its own.',
   },
 };
 
@@ -109,6 +116,17 @@ export async function verifyKey(root, id, value, { fetch = globalThis.fetch } = 
       if (res.ok) { const me = await res.json().catch(() => ({})); return { ok: true, detail: me.plan ? `${me.plan} plan` : 'Upload-Post accepted it' }; }
       if (res.status === 401 || res.status === 403) return { ok: false, detail: 'Upload-Post refused it (check that you copied the whole key)' };
       return { ok: null, detail: `couldn't check it (Upload-Post answered ${res.status})` };
+    }
+    if (id === 'postiz') {
+      // Your own Postiz, at the address chosen in setup: listing its channels is free and read-only.
+      const base = (loadConfig(root).publish?.postiz?.url || 'http://localhost:4007/api').replace(/\/+$/, '');
+      const res = await fetch(`${base}/public/v1/integrations`, { headers: { Authorization: key } });
+      if (res.ok) {
+        const list = [].concat(await res.json().catch(() => [])).filter((c) => c && !c.disabled);
+        return { ok: true, detail: list.length ? `${list.length} channel${list.length === 1 ? '' : 's'} connected (${[...new Set(list.map((c) => c.identifier))].join(', ')})` : 'Postiz accepted it, but no channels are connected there yet' };
+      }
+      if (res.status === 401 || res.status === 403) return { ok: false, detail: 'your Postiz refused it (check that you copied the whole key)' };
+      return { ok: null, detail: `couldn't check it (your Postiz at ${base} answered ${res.status})` };
     }
     if (id === 'elevenlabs') {
       const a = await new ElevenLabs({ key, server: voiceConfig(root).elevenlabs.server, fetch }).account();

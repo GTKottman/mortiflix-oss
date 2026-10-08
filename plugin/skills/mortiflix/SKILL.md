@@ -59,7 +59,7 @@ Change it with `mortiflix config backend <name>`.
 ## 2. Setup (first run, or `/mortiflix setup`)
 
 Run `mortiflix setup status --json`. Take the parts in order (`parts[]`: claude, transitions, narration, music,
-assets, 3d). For each one, say in a sentence or two why it exists and what it needs (`parts[].why`, `parts[].needs`).
+assets, publish, 3d). For each one, say in a sentence or two why it exists and what it needs (`parts[].why`, `parts[].needs`).
 Say what's already there (`tools`), then ask. Use AskUserQuestion for choices. Every part can be skipped.
 
 - **Transitions**: needed by explainer and social-short. `mortiflix setup install transitions`.
@@ -73,6 +73,9 @@ Say what's already there (`tools`), then ask. Use AskUserQuestion for choices. E
   `mortiflix setup install strudel chrome`. Chrome reuses theirs when they have one.
 - **Assets**: only if they use a stock site. `mortiflix setup assets <url> …`, then
   `mortiflix setup install browser-harness`. They sign in to the site in their own Chrome.
+- **Publishing**: optional. `mortiflix setup publish uploadpost [--profile <name>]` (hosted, paid plans),
+  `mortiflix setup publish postiz [--url <their Postiz API address>]` (free, open source, they run it with Docker), or
+  `mortiflix setup publish none`. The key is theirs to type: `mortiflix keys set uploadpost` or `mortiflix keys set postiz`.
 - **3D**: only if they want it. `mortiflix setup install blender blender-addons`.
 
 Before each install, say what it is, where it goes and how big it is (`tool_info[id]`). Installs can take minutes, so
@@ -162,5 +165,7 @@ each one: `mortiflix checks approve <id>` or `reject <id>`.
 
 ## 7. Delivered
 
-`mortiflix status <id> --json` → `deliverables[].path`. Open the final for them, and say where it is. If they change
+`mortiflix status <id> --json` → `deliverables[].path`. Open the final for them, and say where it is. If publishing is
+set up and they want it posted, they run `mortiflix publish <id>` in their own terminal (it shows the plan and asks).
+Never run `publish` yourself: posting is theirs to do. If they change
 their mind about an approved step later: `mortiflix reopen <id> <step> "what to change"`, then run again.

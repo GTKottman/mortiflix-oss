@@ -69,6 +69,9 @@ key is checked with a free, read-only API call before it's saved.
   Sessions don't get it.
 - The ElevenLabs key is stored in `secrets.json` too, and given to a session only while ElevenLabs is the narration
   engine.
+- The publishing keys (Upload-Post, Postiz) are stored in `secrets.json` too and never given to a session. Only
+  `mortiflix publish`, run by you, uses one, and sends it only to the service you picked (for Postiz, the address you
+  gave in setup).
 - Other keys go to `session.env` (mode 600) and are given to every session's environment. The UI shows their names,
   never their values. Only add keys that sessions need, and prefer keys with spending limits.
 - The runner checks a project's keys before each session: if one is missing, the project pauses and tells you which,

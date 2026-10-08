@@ -19,6 +19,7 @@ import * as keys from '../keys.mjs';
 import * as setup from '../setup.mjs';
 import * as booth from '../booth.mjs';
 import * as music from '../music.mjs';
+import * as pub from '../publish.mjs';
 import { costText } from '../usage.mjs';
 
 const MIME = {
@@ -114,6 +115,7 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     if (p === '/setup' && method === 'GET') return send(res, 200, await setupInfo(root, installs));
     if (p === '/setup/music' && method === 'PUT') { setup.saveMusic(root, await json(req)); return after(await setupInfo(root, installs)); }
     if (p === '/setup/assets' && method === 'PUT') { setup.saveAssetSites(root, (await json(req)).sites); return after(await setupInfo(root, installs)); }
+    if (p === '/setup/publish' && method === 'PUT') { const b = await json(req); pub.savePublish(root, { service: b.service, url: b.url, profile: b.profile }); return after(await setupInfo(root, installs)); }
     if (p === '/setup/recordings' && method === 'PUT') { setup.browserHarnessRecordings(Boolean((await json(req)).enable)); return after(await setupInfo(root, installs)); }
     if (p === '/setup/blender' && method === 'POST') {
       if (!loopback) throw new BadRequest('Blender opens on the studio\'s own screen: use mortiflix blender there');

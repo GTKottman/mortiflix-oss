@@ -20,6 +20,8 @@ import { loadConfig, saveConfig, UserError } from './studio.mjs';
 import { voiceConfig } from './voice/index.mjs';
 import * as qwen from './voice/qwen.mjs';
 import * as plat from './platform.mjs';
+import { publishConfig } from './publish.mjs';
+import { keySource } from './keys.mjs';
 
 export const STRUDEL_VERSION = '1.3.0';
 const OS = platform();
@@ -63,6 +65,12 @@ export const PARTS = [
     why: 'If you use a stock site (footage, images, 3D models, sound effects), sessions can search it and download what fits, with your own login, in your own Chrome.',
     needs: 'browser-harness (from browser-use on GitHub, installed with uv) and the addresses of the sites you use.',
     tools: ['browser-harness'],
+  },
+  {
+    id: 'publish',
+    title: 'Publishing',
+    why: 'Once you approve a final, `mortiflix publish` can post it to your social accounts: where the brief said, at a time you pick, after it shows you the plan and you say yes. Sessions can never post.',
+    needs: 'Optional. Upload-Post (hosted, paid plans, your accounts connected on upload-post.com) or Postiz (free and open source, AGPL-3.0, runs on your own server with Docker, your accounts connected in it). Either one\'s API key. Without one, you download finals and post them yourself.',
   },
   {
     id: '3d',
@@ -216,6 +224,7 @@ export async function setupStatus(root) {
     'blender-addons': addonsStatus(root),
     music: musicConfig(config),
     assets: assetsConfig(config),
+    publish: (({ service, ...rest }) => ({ service, ...rest, key: service === 'none' ? null : keySource(root, service) }))(publishConfig(config)),
     gpu: qwen.recommend(qwen.detectGpus()),
   };
 }
