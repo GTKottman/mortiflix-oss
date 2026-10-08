@@ -83,6 +83,28 @@ and approve. Sessions start by themselves while `serve` runs. To use it from ano
 `mortiflix serve --host 0.0.0.0`: you then get a private link with an access token (put it behind HTTPS if it leaves
 your network).
 
+**C. In Claude Code**
+
+```
+/plugin marketplace add GTKottman/mortiflix-oss
+/plugin install mortiflix@mortiflix
+/mortiflix
+```
+
+`/mortiflix` walks you through all of it in the conversation. It installs the CLI if you don't have it, then
+covers setup, the demo, a new video's brief, and running the studio. At each gate it shows you what the session
+sent, opens the frames and videos, and turns what you say into pinned notes. It reads them back to you before
+sending. Jump straight to a part with `/mortiflix demo`, `/mortiflix new explainer`, `/mortiflix review`,
+`/mortiflix status` or `/mortiflix setup`. If another plugin also has a `/mortiflix`, this one is
+`/mortiflix:mortiflix`.
+
+Your Claude Code conversation is the guide, not the studio. The video is still made by the studio's own sessions,
+behind the same gates. The guide asks you at every gate and is told never to decide one for you. Keys
+never go into the chat: you add them with `mortiflix keys` in a terminal, or in Settings › Keys. The guide asks
+before it installs anything, opens a port or starts paid work. Only read commands are pre-allowed, so your Claude
+Code permission settings apply to everything else. From a clone, `claude --plugin-dir ./plugin` loads it
+without installing.
+
 ## Backends
 
 | Backend | What runs | Who pays |

@@ -1,6 +1,6 @@
 // mortiflix: the command line. Everything the web UI does, in a terminal.
 import { createInterface } from 'node:readline';
-import { existsSync, createReadStream, statSync, writeFileSync } from 'node:fs';
+import { existsSync, createReadStream, statSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { studioRoot, ensureStudio, loadConfig, saveConfig, paths, readJson } from './studio.mjs';
@@ -19,7 +19,7 @@ const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
   : { b: (s) => s, dim: (s) => s, acc: (s) => s, red: (s) => s, green: (s) => s };
 
-const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claude makes the video, you approve every stage.
+export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claude makes the video, you approve every stage.
 
   ${C.b('Getting started')}
   mortiflix init [--backend claude-code|anthropic-api|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
@@ -36,6 +36,8 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
   mortiflix list                                               your projects
   mortiflix status <project>                                   steps, versions, the log
   mortiflix review [<project>]                                 review what's waiting (approve, notes, answers)
+  mortiflix respond <project> <step> --approve|--changes [--note "…"]… [--overall "…"] [--answer id=value]…
+  mortiflix answer <project> <question-id> [answer]            answer a question the session asked
   mortiflix reopen <project> <step> "what to change"           send an approved step back (you changed your mind)
   mortiflix pause|resume|cancel <project>
 
@@ -62,16 +64,24 @@ const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claud
   mortiflix keys remove <anthropic|elevenlabs|NAME>
   mortiflix checks [approve|reject <id>]                       the error checklist sessions proposed
 
-  --studio <dir> works with every command.`;
+  --studio <dir> works with every command. --json prints what pipelines, list, status, review, keys and
+  setup status show as JSON, for scripts and for Claude Code (/mortiflix).
+
+  ${C.b('Without a terminal')} (scripts, Claude Code)
+  mortiflix setup install <${setup.TOOLS.join('|')}>
+  mortiflix setup music <strudel|none> [--midi|--no-midi]
+  mortiflix setup assets <url>… | --clear`;
+
+const LISTS = ['set', 'file', 'note', 'answer'];
 
 function parse(argv) {
-  const out = { _: [], set: [], file: [] };
+  const out = { _: [], set: [], file: [], note: [], answer: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (!a.startsWith('--')) { out._.push(a); continue; }
     const [k, inline] = a.slice(2).split(/=(.*)/s);
     const v = inline !== undefined ? inline : (argv[i + 1] !== undefined && !argv[i + 1].startsWith('--') ? argv[++i] : true);
-    if (k === 'set' || k === 'file') out[k].push(v); else out[k] = v;
+    if (LISTS.includes(k)) out[k].push(v); else out[k] = v;
   }
   return out;
 }
@@ -86,26 +96,29 @@ export async function run(argv = process.argv.slice(2)) {
     if (a.help || a.h) return console.log(HELP);
     switch (cmd) {
       case 'init': return init(root, a);
-      case 'keys': return keysCmd(root, rest);
+      case 'keys': return a.json ? (needStudio(root), json({ keys: keys.keyStatus(root), session_keys: keys.sessionKeyNames(root) })) : keysCmd(root, rest);
       case 'setup': return setupCmd(root, rest, a);
       case 'blender': needStudio(root); return console.log(`Opening ${setup.openBlender(root, rest)} with the studio's profile (Camera Flight: 3D Viewport › N › Flight).`);
       case 'doctor': return doctor(root);
       case 'demo': return demo(root);
-      case 'pipelines': return pipelines(root);
+      case 'pipelines': return a.json ? json(pipelinesView(root)) : pipelines(root);
       case 'new': return newProject(root, rest[0], a);
       case 'run': return runLoop(root, a);
-      case 'list': case 'ls': return list(root);
-      case 'status': return status(root, pick(root, rest[0]));
-      case 'review': return review(root, rest[0]);
-      case 'pause': gates.pause(root, pick(root, rest[0])); return console.log('Paused.');
+      case 'list': case 'ls': return list(root, a);
+      case 'status': return a.json ? json(statusView(root, pick(root, rest[0]))) : status(root, pick(root, rest[0]));
+      case 'review': return a.json ? reviewJson(root, rest[0]) : (ownerOnly(), review(root, rest[0]));
+      case 'respond': ownerOnly(); return respondCmd(root, rest, a);
+      case 'answer': ownerOnly(); return answerCmd(root, rest);
+      case 'pause': ownerOnly(); gates.pause(root, pick(root, rest[0])); return console.log('Paused.');
       case 'reopen': {
+        ownerOnly();
         const [proj, step, ...words] = rest;
         if (!step || !words.length) throw new Error('mortiflix reopen <project> <step> "what to change"');
         gates.reopen(root, pick(root, proj), step, { overall: words.join(' ') });
         return console.log(`${C.acc('↺')} ${step} goes back for changes. ${C.b('mortiflix run')} makes the next version.`);
       }
-      case 'resume': gates.resume(root, pick(root, rest[0])); return console.log('Resumed: it will run on the next `mortiflix run` (or right away under `serve`).');
-      case 'cancel': gates.cancel(root, pick(root, rest[0])); return console.log('Cancelled.');
+      case 'resume': ownerOnly(); gates.resume(root, pick(root, rest[0])); return console.log('Resumed: it will run on the next `mortiflix run` (or right away under `serve`).');
+      case 'cancel': ownerOnly(); gates.cancel(root, pick(root, rest[0])); return console.log('Cancelled.');
       case 'serve': return serve(root, a);
       case 'config': return config(root, rest);
       case 'checks': return checks(root, rest);
@@ -146,6 +159,18 @@ function prompter() {
 function needStudio(root) {
   if (!existsSync(paths(root).config)) throw new Error(`no studio at ${root}: run \`mortiflix init\` first`);
 }
+
+const json = (v) => console.log(JSON.stringify(v, null, 2));
+
+// What only the owner does (approve, ask for changes, answer, reopen, pause…) is refused inside a studio session,
+// so a session that finds the CLI on its PATH can't review its own work by accident. A guard, not a wall: the
+// sandbox is the wall (docs/SECURITY.md).
+function ownerOnly() {
+  if (process.env.MFX_TOKEN) throw new Error('only the owner does that: a Mortiflix session can\'t review, answer or reopen its own work (submit with mfx instead)');
+}
+
+// A text item's paragraphs, numbered the way the web studio numbers them (notes point at them by index).
+export const paragraphs = (text) => String(text || '').split(/\n\s*\n/).filter((x) => x.trim()).map((x) => x.trim());
 
 // A project id, or a unique prefix of one, or (when there's only one) none at all.
 function pick(root, given) {
@@ -299,9 +324,10 @@ async function runLoop(root, a) {
 
 const STATE_LABEL = { draft: 'draft', queued: 'in production', waiting: 'your turn', paused: 'needs you', delivered: 'delivered', cancelled: 'cancelled' };
 
-function list(root) {
+async function list(root, a = {}) {
   needStudio(root);
   const all = listProjects(root);
+  if (a.json) return json(await studioView(root, all));
   if (!all.length) return console.log(`No projects yet: ${C.b('mortiflix new <pipeline>')} or ${C.b('mortiflix demo')}.`);
   for (const p of all) {
     const label = STATE_LABEL[p.state];
@@ -353,7 +379,7 @@ async function review(root, given) {
         sub.items.forEach((it, i) => {
           if (it.kind === 'text') {
             console.log(`${C.b(`[${i}] ${it.label}`)}`);
-            it.text.split(/\n\s*\n/).forEach((para, n) => console.log(`  ${C.dim(`¶${n}`)} ${para.trim().split('\n').join('\n     ')}`));
+            paragraphs(it.text).forEach((para, n) => console.log(`  ${C.dim(`¶${n}`)} ${para.split('\n').join('\n     ')}`));
           } else console.log(`${C.b(`[${i}] ${it.label}`)} ${C.dim(it.kind)}  ${join(projectPaths(root, id).state, it.file)}`);
         });
         const files = sub.items.filter((it) => it.file);
@@ -389,6 +415,103 @@ async function review(root, given) {
   } finally {
     rl.close();
   }
+}
+
+// ---- for scripts and Claude Code: the same views and decisions, without a terminal ----
+
+// The studio at a glance: the backend, whether a runner (`run` or `serve`) holds it, and every project.
+async function studioView(root, all = listProjects(root)) {
+  const config = loadConfig(root);
+  const lock = join(paths(root).run, 'runner.pid');
+  const pid = existsSync(lock) ? Number(readFileSync(lock, 'utf8')) : 0;
+  let running = false;
+  if (pid) { try { process.kill(pid, 0); running = true; } catch (e) { running = e.code === 'EPERM'; } }
+  const web = `http://127.0.0.1:${config.port}/`;
+  let up = false;
+  if (running) { try { await fetch(web, { signal: AbortSignal.timeout(800) }); up = true; } catch { /* not serving here */ } }
+  return {
+    studio: root,
+    backend: config.backend,
+    runner: running ? { pid, web: up ? web : null } : null,
+    projects: all.map((p) => ({
+      id: p.id, title: p.title, pipeline: p.pipeline.slug, state: p.state, label: STATE_LABEL[p.state],
+      status: p.status?.text || null, needs_you: p.needs_you?.text || null, working: Boolean(p.session?.running),
+      in_review: gates.stepView(p, projectPipeline(root, p.id)).filter((s) => s.state === 'in_review').map((s) => s.key),
+      unanswered: p.questions.filter((q) => !q.answered_at).length,
+    })),
+  };
+}
+
+// Every pipeline with its steps and the brief's questions (what `mortiflix new` asks).
+function pipelinesView(root) {
+  return listPipelines(existsSync(paths(root).config) ? root : null).map((p) => (p.error ? { slug: p.slug, source: p.source, error: p.error } : {
+    slug: p.slug, name: p.name, description: p.description, source: p.source,
+    steps: p.steps.map((s) => ({ key: s.key, name: s.name, review: s.review, after: s.after })),
+    intake: p.intake,
+  }));
+}
+
+function statusView(root, id) {
+  const p = loadProject(root, id);
+  const pipeline = projectPipeline(root, id);
+  return {
+    id: p.id, title: p.title, pipeline: pipeline.slug, state: p.state, label: STATE_LABEL[p.state],
+    status: p.status?.text || null, needs_you: p.needs_you?.text || null, working: Boolean(p.session?.running),
+    steps: gates.stepView(p, pipeline).map((s) => ({ key: s.key, name: s.name, review: s.review, state: s.state, version: s.version })),
+    deliverables: p.deliverables.map((d) => ({ ...d, path: join(projectPaths(root, id).state, d.file) })),
+    usage: p.usage, cost: costText(p.usage) || null,
+    log: readEvents(root, id, { limit: 20 }),
+  };
+}
+
+// Everything waiting on the owner in one project: questions, and each step in review with what was sent.
+function reviewView(root, id) {
+  const p = loadProject(root, id);
+  const pipeline = projectPipeline(root, id);
+  const dir = projectPaths(root, id).state;
+  const subs = gates.submissions(root, id);
+  return {
+    id: p.id, title: p.title, pipeline: pipeline.slug, state: p.state, needs_you: p.needs_you?.text || null,
+    questions: p.questions.filter((q) => !q.answered_at).map((q) => ({ id: q.id, step: q.step, text: q.text, choices: q.choices, default: q.default })),
+    reviews: gates.stepView(p, pipeline).filter((s) => s.state === 'in_review').map((s) => {
+      const sub = subs.filter((x) => x.step === s.key).at(-1);
+      return {
+        step: s.key, name: s.name, review: s.review, version: sub.version, note: sub.note, pin_changes: sub.pin_changes, questions: sub.questions,
+        items: sub.items.map((it, index) => (it.kind === 'text'
+          ? { index, label: it.label, section: it.section, kind: 'text', paragraphs: paragraphs(it.text) }
+          : { index, label: it.label, section: it.section, kind: it.kind, path: join(dir, it.file), size: it.size })),
+        web: `#/p/${p.id}/review/${s.key}`,
+      };
+    }),
+  };
+}
+
+function reviewJson(root, given) {
+  needStudio(root);
+  const ids = given ? [pick(root, given)] : listProjects(root).filter((p) => ['waiting', 'paused'].includes(p.state)).map((p) => p.id);
+  return json(ids.map((id) => reviewView(root, id)));
+}
+
+// `mortiflix respond <project> <step> --approve | --changes --note "1@0.5,0.3: …" --overall "…" --answer q1=…`
+function respondCmd(root, [given, stepKey], a) {
+  const id = pick(root, given);
+  if (!stepKey || Boolean(a.approve) === Boolean(a.changes)) throw new Error('mortiflix respond <project> <step> --approve | --changes [--note "…"]… [--overall "…"] [--answer id=value]…');
+  const view = gates.stepView(loadProject(root, id), projectPipeline(root, id)).find((s) => s.key === stepKey);
+  const version = a.version !== undefined ? Number(a.version) : view?.version ?? 0;
+  const answers = {};
+  for (const kv of a.answer) { const [k, ...v] = String(kv).split('='); answers[k] = v.join('='); }
+  const notes = a.note.map((n) => parseNote(String(n)));
+  const r = gates.respond(root, id, stepKey, version, { verdict: a.approve ? 'approve' : 'changes', notes, overall: typeof a.overall === 'string' ? a.overall : '', answers });
+  if (r.verdict === 'approve') console.log(C.green(`✔ ${view.name} v${version} approved.${r.project_state === 'delivered' ? ' Delivered.' : ''}`));
+  else console.log(C.acc(`↺ Changes sent for ${view.name} v${version} (${notes.length} note${notes.length === 1 ? '' : 's'}). ${C.b('mortiflix run')} makes the next version.`));
+}
+
+function answerCmd(root, [given, qid, ...words]) {
+  if (!qid) throw new Error('mortiflix answer <project> <question-id> [answer] (no answer takes the default)');
+  const id = pick(root, given);
+  gates.answerQuestion(root, id, qid, words.join(' ') || null);
+  const q = loadProject(root, id).questions.find((x) => x.id === qid);
+  console.log(`${C.green('✔')} ${q.text} → ${q.answer}`);
 }
 
 export function parseNote(line) {
@@ -672,6 +795,20 @@ async function showSetup(root) {
   row(st.blender.ok ? st['blender-addons'].ok : null, '3D', st.blender.ok ? `${st.blender.detail}; ${st['blender-addons'].detail}` : 'not set up');
 }
 
+async function setupView(root) {
+  const config = loadConfig(root);
+  const backend = BACKENDS[config.backend].available(config, root);
+  const { presets, output_formats, servers, ...narration } = voice.voiceOverview(root);
+  return {
+    backend: { name: config.backend, ...backend },
+    backends: Object.fromEntries(Object.entries(BACKENDS).map(([name, b]) => [name, b.available(config, root)])),
+    narration,
+    tools: await setup.setupStatus(root),
+    parts: setup.PARTS,
+    tool_info: setup.TOOL_INFO,
+  };
+}
+
 async function setupWalk(root, only = null) {
   ensureStudio(root);
   const parts = only ? setup.PARTS.filter((p) => p.id === only) : setup.PARTS;
@@ -686,8 +823,24 @@ async function setupWalk(root, only = null) {
   await showSetup(root);
 }
 
-async function setupCmd(root, [part], a) {
+async function setupCmd(root, [part, ...args], a) {
   needStudio(root);
+  if (part === 'install') {
+    if (!args.length) throw new Error(`mortiflix setup install <${setup.TOOLS.join('|')}>…`);
+    for (const id of args) if (!setup.TOOLS.includes(id)) throw new Error(`unknown tool "${id}" (${setup.TOOLS.join(', ')})`);
+    for (const id of args) await offerInstall(root, id, { ask: false });
+    return undefined;
+  }
+  if (part === 'music' && args.length) {
+    const m = setup.saveMusic(root, { engine: args[0], midi: a.midi ? true : a['no-midi'] ? false : undefined });
+    return console.log(`${C.green('✔')} Music: ${m.engine === 'none' ? 'none (music steps are skipped)' : `Strudel${m.midi ? ' + MIDI pack' : ''}`}.`);
+  }
+  if (part === 'assets' && (args.length || a.clear)) {
+    setup.saveAssetSites(root, a.clear ? [] : args);
+    const now = setup.assetsConfig(loadConfig(root)).sites;
+    return console.log(now.length ? `${C.green('✔')} Asset sites: ${now.map((x) => x.url).join(', ')}` : 'No asset sites.');
+  }
+  if (part === 'status' && a.json) return json(await setupView(root));
   if (part === 'status' || !process.stdin.isTTY) return showSetup(root);
   if (part && !PART_IDS.includes(part)) throw new Error(`mortiflix setup [${PART_IDS.join('|')}|status]`);
   return setupWalk(root, part || null);
@@ -702,6 +855,7 @@ async function prompterOnce(question) {
 function checks(root, [action, id]) {
   needStudio(root);
   if (action === 'approve' || action === 'reject') {
+    ownerOnly();
     const c = gates.decideCheck(root, id, action === 'approve');
     return console.log(`${action === 'approve' ? C.green('✔ Added to the checklist') : 'Rejected'}: ${c.title}`);
   }

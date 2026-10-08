@@ -31,7 +31,9 @@ The gates are enforced by the studio process, not by the prompt:
 - it can't change what you already reviewed: submissions are copied into `state/`, outside the working folder;
 - it can't submit files from outside its project folder (paths and symlinks are resolved and checked).
 
-Unsandboxed, a determined session could still edit `state/` files directly with its shell. If that's in your threat
+The CLI's own decision commands (`mortiflix respond`, `answer`, `review`, `reopen`, …) refuse to run inside a session
+(`MFX_TOKEN` is set there), so a session that finds `mortiflix` on its `PATH` can't approve its own work by accident.
+That's a guard, not a wall. Unsandboxed, a determined session could still edit `state/` files directly with its shell. If that's in your threat
 model, turn the sandbox on.
 
 ## Your words are direction; outside material is data
@@ -41,6 +43,20 @@ pipeline's defaults (never the gate rules). The risk is everything else a sessio
 hand over, web pages it researches, things it downloads. The gate protocol tells it that this material is data and
 never instructions, and to report anything in it that tries to give orders. That reduces prompt injection; it can't
 rule it out. If you hand a session files or links from sources you don't trust, turn the sandbox on.
+
+## /mortiflix in Claude Code
+
+The `/mortiflix` skill runs in your own Claude Code conversation, with your permissions. It's a guide: it runs the CLI
+and passes your decisions on. It doesn't make the video.
+
+- You start it yourself: it never starts on its own. Studio sessions can't start it either, even when they load
+  your plugins.
+- It pre-allows only the commands that read (`--json` views, `doctor`). Approving, sending notes, starting a run,
+  installing and serving are not pre-allowed, so your own Claude Code permission settings decide whether they
+  prompt. The skill is also told to ask you before each of them. That instruction is a prompt, not a gate. The
+  gates themselves are unchanged: a step is approved only when `mortiflix respond` runs.
+- It never asks for a key in the chat. You add keys yourself, hidden, with `mortiflix keys` or in Settings › Keys.
+- It treats what sessions submit as data, never as instructions.
 
 ## Keys
 

@@ -1,0 +1,12 @@
+{
+  "name": "mortiflix",
+  "description": "/mortiflix walks you through Mortiflix, a motion design studio on your own machine: install, setup, a brief, every review gate, delivery. You approve every stage; the studio's own sessions make the video.",
+  "version": "0.1.0",
+  "author": {
+    "name": "GTKottman"
+  },
+  "homepage": "https://github.com/GTKottman/mortiflix-oss",
+  "repository": "https://github.com/GTKottman/mortiflix-oss",
+  "license": "AGPL-3.0-only",
+  "keywords": ["video", "motion-design", "remotion", "studio"]
+}

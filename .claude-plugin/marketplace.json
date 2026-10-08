@@ -1,0 +1,19 @@
+{
+  "name": "mortiflix",
+  "owner": {
+    "name": "GTKottman"
+  },
+  "metadata": {
+    "description": "Mortiflix, the open-source motion design studio, from inside Claude Code",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "mortiflix",
+      "source": "./plugin",
+      "description": "/mortiflix walks you through Mortiflix in Claude Code: install, setup, a brief, every review gate, delivery.",
+      "category": "productivity",
+      "tags": ["video", "motion-design", "remotion", "studio"]
+    }
+  ]
+}

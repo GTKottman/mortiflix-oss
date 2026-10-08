@@ -147,3 +147,28 @@ are done (and which changed since) and `build` works unchanged. Three front ends
 A plain `node:http` server and a no-build vanilla JS app. JSON API under `/api`, live updates over server-sent events
 (`/api/events`: `change` and `activity`), submitted media under `/files/<id>/reviews/…` with Range support. See
 [SECURITY.md](SECURITY.md) for its guards.
+
+## Claude Code (`plugin/`)
+
+The repository is also a Claude Code plugin marketplace (`.claude-plugin/marketplace.json`). It has one plugin,
+`plugin/`, with one skill: `/mortiflix`. The skill drives the same CLI the owner would type, using commands that
+need no terminal:
+
+- **Reading.** `--json` on `pipelines`, `list` (the studio, whether a runner holds it, every project), `status`,
+  `review` (questions, and every step in review with its note, `pin_changes`, items with absolute paths and numbered
+  paragraphs), `keys` (sources only) and `setup status`.
+- **Deciding.** `respond <project> <step> --approve|--changes --note … --overall … --answer qid=value` and
+  `answer <project> <qid> [answer]`. Notes use the terminal review's syntax (`parseNote`).
+- **Setup.** `setup install <tool>…`, `setup music strudel|none [--midi]`, `setup assets <url>…|--clear`. Choosing a
+  voice and typing keys stay with the owner, in their terminal or the web studio.
+
+Two guards keep the guide and the studio apart:
+- The skill has `disable-model-invocation: true`. Studio sessions are Claude Code too, and they may load the
+  owner's plugins, so they must never pick the skill up by themselves.
+- The owner's commands (`respond`, `answer`, `review`, `reopen`, `pause`, `resume`, `cancel`,
+  `checks approve|reject`) refuse to run when `MFX_TOKEN` is set, which means inside a session.
+
+The `claude-code` backend also drops the variables a Claude Code conversation sets for its own tools
+(`PARENT_SESSION_VARS`). A `mortiflix run` started from `/mortiflix` therefore gives each session its own Claude Code,
+as if it had been started from a terminal.
+

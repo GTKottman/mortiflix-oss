@@ -14,6 +14,12 @@ export function available(config) {
   return r.status === 0 ? { ok: true, detail: r.stdout.trim() } : { ok: false, detail: `${config.claudeBin || 'claude'} not found: install Claude Code (https://claude.com/claude-code) and log in` };
 }
 
+// Set by a Claude Code conversation for its own tools. A run started from inside one (/mortiflix) must not hand its
+// identity, socket or session to the studio's sessions: each session is its own Claude Code, as from a terminal.
+export const PARENT_SESSION_VARS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_CHILD_SESSION',
+  'CLAUDE_CODE_SESSION_ATTENDED', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_BRIDGE_SESSION_ID',
+  'CLAUDE_CODE_EXECPATH', 'CLAUDE_PID'];
+
 export async function run({ root, workdir, prompt, env, transcript, onActivity, signal, config }) {
   const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...(config.claudeArgs || [])];
   if (config.model) args.push('--model', config.model);
@@ -24,6 +30,7 @@ export async function run({ root, workdir, prompt, env, transcript, onActivity, 
     // A one-shot session ends when its turn ends: anything backgrounded would be killed mid-job.
     CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
   };
+  for (const k of PARENT_SESSION_VARS) delete sessionEnv[k];
   let cmd = config.claudeBin || 'claude';
   let argv = args;
   if (config.sandbox) {
