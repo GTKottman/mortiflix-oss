@@ -7,13 +7,15 @@
 //
 // See docs/PIPELINES.md for the full format. A project pins a snapshot of its pipeline when it's created, so editing
 // a pipeline never changes a video that's already in production.
-import { existsSync, readdirSync, readFileSync, statSync, cpSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, cpSync, mkdirSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import { REPO, paths, readJson, UserError } from './studio.mjs';
+import { zip, unzip, dirEntries } from './zip.mjs';
 
 export const REVIEW_MODES = ['questions', 'document', 'frames', 'video', 'audio', 'internal'];
-export const WORK_KINDS = ['script', 'stills', 'motion', 'audio', 'music'];
+export const WORK_KINDS = ['script', 'stills', 'motion', 'audio', 'music', 'research', 'plan', 'instruments'];
 // A step with "when" runs only if the studio and the brief want it (otherwise it's skipped when the project starts).
 export const STEP_CONDITIONS = ['music'];
 const KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
@@ -182,4 +184,46 @@ export function snapshotPipeline(pipeline, dest) {
   // The snapshot is self-contained: its skills are now local.
   delete def.shared_skills;
   writeFileSync(join(dest, 'pipeline.json'), JSON.stringify(def, null, 2) + '\n');
+}
+
+// Sharing a pipeline: one self-contained zip (the folder plus the shared skills it uses, as its own skills/), the same
+// shape a project pins. `mortiflix pipelines export <slug>` writes it; `mortiflix pipelines add <zip|https url>` puts
+// one into the studio's pipelines/ folder after checking every path and validating it.
+export function exportPipeline(root, slug) {
+  const p = findPipeline(root, slug);
+  const tmp = mkdtempSync(join(tmpdir(), 'mfx-export-'));
+  try {
+    snapshotPipeline(p, join(tmp, p.slug));
+    return { slug: p.slug, name: p.name, hash: p.hash, zip: zip(dirEntries(join(tmp, p.slug), p.slug)) };
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+}
+
+export function addPipeline(root, buf, { replace = false } = {}) {
+  const entries = unzip(buf, { maxBytes: 100 * 1024 * 1024 });
+  const top = entries.find((e) => /^([^/]+\/)?pipeline\.json$/.test(e.name));
+  if (!top) throw new UserError('no pipeline.json in that zip (a shared pipeline is a folder with pipeline.json and PIPELINE.md)');
+  const prefix = top.name.slice(0, -'pipeline.json'.length);
+  const tmp = mkdtempSync(join(tmpdir(), 'mfx-add-'));
+  try {
+    const files = [];
+    for (const e of entries) {
+      if (!e.name.startsWith(prefix)) continue;
+      const rel = e.name.slice(prefix.length);
+      if (!rel || rel.includes('\\') || rel.startsWith('/') || rel.split('/').some((x) => x === '..' || x === '' || x === '.')) throw new UserError(`unsafe path in the zip: ${e.name}`);
+      const dest = join(tmp, 'p', rel);
+      mkdirSync(join(dest, '..'), { recursive: true });
+      writeFileSync(dest, e.data);
+      files.push(rel);
+    }
+    const def = loadPipeline(join(tmp, 'p'));
+    const dest = join(paths(root).pipelines, def.slug);
+    const exists = existsSync(dest);
+    if (exists && !replace) throw new UserError(`this studio already has a pipeline "${def.slug}" (add --replace to swap it)`);
+    const builtIn = existsSync(join(builtInDir(), def.slug, 'pipeline.json'));
+    mkdirSync(paths(root).pipelines, { recursive: true });
+    rmSync(dest, { recursive: true, force: true });
+    cpSync(join(tmp, 'p'), dest, { recursive: true });
+    return { slug: def.slug, name: def.name, files: files.sort(), replaced: exists, overrides_built_in: builtIn,
+      scripts: files.filter((f) => /\.(mjs|js|cjs|py|sh)$/.test(f)) };
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
 }

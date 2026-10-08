@@ -43,6 +43,9 @@ in your studio's `pipelines/` folder (a pipeline with the same slug as a built-i
 }
 ```
 
+`makes` is `video` or `music`: what the studio calls the result. A `music` pipeline (like `song`) needs the studio's
+music turned on to start; its steps use the music engine (the shared `music` skill, [MUSIC.md](MUSIC.md)).
+
 ### Intake
 
 What you're asked when you start a project. `type`: `text`, `long`, `choice` (needs `choices`, may have `default`),
@@ -57,7 +60,7 @@ what the studio can't decide well on its own; the `brief` step can ask the rest,
 | `name` | what you see |
 | `review` | how you review it: `questions` (a note + questions), `document` (text, commented by paragraph), `frames` (images, pinned), `video` (pinned at a moment and a spot), `audio` (noted at a moment), or `internal` (no review: the session finishes it with its checks) |
 | `after` | the steps it waits for. Leave it out and a step waits for the one before it; give `[]` for none. Steps with no path between them run side by side |
-| `work` | what the step makes: `script`, `stills`, `motion`, `audio`. Decides which checks it runs |
+| `work` | what the step makes: `script`, `stills`, `motion`, `audio`, `music` (a score), `instruments` (sounds for a score), `research`, `plan` (a written plan, like a blueprint). Decides which checks it runs |
 | `delivers` | the step whose approved files are the deliverables (defaults to the last reviewed step) |
 | `describe` | optional one-liner shown on the Pipelines page |
 
@@ -109,6 +112,17 @@ mortiflix run && mortiflix review
 
 The demo checks the plumbing (steps, dependencies, review modes, checks, notes), not the craft. For the craft, run a
 real session on a small brief and read its transcript (`state/<id>/sessions/*.jsonl`) and journal.
+
+## Sharing one
+
+```sh
+mortiflix pipelines export my-pipeline              # my-pipeline.mortiflix-pipeline.zip: the folder + every skill it uses
+mortiflix pipelines add my-pipeline.mortiflix-pipeline.zip   # (or an https:// link) into your studio's pipelines/
+```
+
+The zip is self-contained: shared skills are copied into its own `skills/`, the same shape a project pins. Adding one
+checks every path in it, validates it, refuses to replace a studio pipeline unless you pass `--replace`, and lists the
+scripts it brings: a pipeline's skills run in your sessions, so read them before you start a project with one.
 
 ## Sending one upstream
 

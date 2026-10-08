@@ -200,6 +200,32 @@ async function startDemo() {
   } catch (e) { toast(e.message, true); }
 }
 
+// The Music panel: download the MIDI pack, import your own master, see how it fits the score.
+function musicPanel(id, ms) {
+  const own = ms.own; const e = ms.expect;
+  const waiting = ms.finish === 'own' && !own;
+  const input = h('input', { type: 'file', accept: '.wav,.aif,.aiff,.flac,.mp3,.m4a,.ogg,audio/*', style: { display: 'none' }, onchange: async (ev) => {
+    const f = ev.target.files[0]; if (!f) return;
+    toast(`Importing ${f.name}…`);
+    try {
+      const r = await api(`/api/projects/${id}/music/master?name=${encodeURIComponent(f.name)}`, { method: 'POST', raw: f });
+      toast(r.resumed ? 'Imported: the studio carries on with your master' : 'Imported');
+      current.refresh?.();
+    } catch (err) { toast(err.data?.errors?.join(' · ') || err.message, true); }
+  } });
+  const facts = own ? `${own.source}: ${own.measured.seconds} s, ${own.measured.lufs} LUFS, true peak ${own.measured.true_peak} dBTP` : e ? `${e.bars} bars at ${e.bpm} BPM (${e.meter}), ${e.seconds} s. Export from bar 1 to the end.` : '';
+  return h('section', null, h('h2', null, 'Music'),
+    h('div', { class: waiting ? 'turn-line' : 'state-line' },
+      h('div', null,
+        h('div', { class: 'what' }, waiting ? 'Finish the music in your DAW' : own ? 'Your master is the music' : 'The MIDI pack is ready'),
+        h('div', { class: 'why' }, waiting ? 'Every channel is its own MIDI file, with the tempo, sections and hits as markers. Give each channel its sound, mix, export, then import it here. ' : '', facts)),
+      h('div', { class: 'actions' },
+        h('a', { class: 'btn', href: `/api/projects/${id}/music/midi.zip` }, 'Download MIDI'),
+        h('button', { class: waiting ? 'btn primary' : 'btn', onclick: () => input.click() }, own ? 'Replace master' : 'Import your master'), input)),
+    own ? h('audio', { src: `/api/projects/${id}/music/master?v=${encodeURIComponent(own.imported_at)}`, controls: true, preload: 'none', style: { width: '100%', marginTop: '8px' } }) : null,
+    own?.warnings?.length ? h('ul', { class: 'meta' }, own.warnings.map((w) => h('li', null, w))) : null);
+}
+
 // ---------- a project ----------
 
 async function projectView(id) {
@@ -248,6 +274,11 @@ async function projectView(id) {
       h('div', { class: 'why' }, `${b.kept} of ${b.lines.length} lines kept${b.missing.length ? ' · or in a terminal: ' : ''}`, b.missing.length ? h('code', null, `mortiflix record ${id}`) : null)),
     h('a', { class: b.missing.length ? 'btn primary' : 'btn', href: `#/p/${id}/booth` }, b.missing.length ? 'Record narration' : 'Open the booth')) : null;
 
+  // Music: the MIDI pack once the score passes its check; and, when the brief chose to finish it in the owner's own
+  // DAW, the place to import that master.
+  const ms = await api(`/api/projects/${id}/music`).catch(() => null);
+  const musicBlock = ms?.midi?.length ? musicPanel(id, ms) : null;
+
   const subsByStep = (key) => d.submissions.filter((s) => s.step === key);
   const steps = h('section', null, h('h2', null, 'Steps', h('span', { class: 'count' }, `${d.steps.filter((s) => ['approved', 'done', 'skipped'].includes(s.state)).length}/${d.steps.length}`)),
     h('ul', { class: 'rows' }, d.steps.map((s) => h('li', { class: 'row' }, icon(s.state),
@@ -280,7 +311,7 @@ async function projectView(id) {
   mount(
     h('a', { class: 'crumb', href: '#/' }, '← Studio'),
     h('div', { class: 'head' }, h('div', null, h('h1', null, p.title), h('div', { class: 'sub' }, h('span', { class: 'chip' }, d.pipeline.name), h('span', null, p.backend ? `${BACKEND_NAMES[p.backend]} backend` : ''))), actions),
-    stateBlock, narration, deliverables, questions, steps, activity, brief, events, journal,
+    stateBlock, narration, musicBlock, deliverables, questions, steps, activity, brief, events, journal,
     h('p', { class: 'meta', style: { color: 'var(--faint)', fontSize: '12px', marginTop: '18px' } },
       `${usage.sessions} session${usage.sessions === 1 ? '' : 's'}${usage.output_tokens ? ` · ${usage.output_tokens.toLocaleString()} output tokens` : ''}${usage.cost_text ? ` · ${usage.cost_text}` : ''}`),
   );

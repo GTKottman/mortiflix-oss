@@ -1,0 +1,58 @@
+{
+  "slug": "song",
+  "name": "Song",
+  "description": "An instrumental song from a genre and a topic: the genre researched, a blueprint you approve, the score written and checked as MIDI, an instrument chosen for every channel, mastered. You get the master, the stems and the MIDI.",
+  "makes": "music",
+  "shared_skills": ["music"],
+  "intake": [
+    { "id": "genre", "label": "Genre", "type": "text", "required": true, "help": "As specific as you like: \"trip hop\", \"Bristol trip hop with dub bass\", \"lo-fi house\"." },
+    { "id": "topic", "label": "What's it about?", "type": "long", "required": true, "help": "The topic or story. The music tells it without words." },
+    { "id": "mood", "label": "Mood", "type": "text" },
+    { "id": "length", "label": "Length", "type": "choice", "choices": ["The genre's usual length", "1 min", "2 min", "3 min", "4 min"], "default": "The genre's usual length" },
+    { "id": "fixed", "label": "Anything fixed", "type": "text", "help": "A title, a tempo, a key or a meter you want; the studio chooses the rest." },
+    { "id": "references", "label": "References and must-haves", "type": "long", "help": "Tracks to study (never copied), sounds or moments you want." },
+    { "id": "finish", "label": "Who finishes it", "type": "choice", "choices": ["The studio, in Strudel", "Me, from the MIDI in my own DAW"], "default": "The studio, in Strudel",
+      "help": "Either way you get the MIDI: every channel on its own track, with tempo and section markers." }
+  ],
+  "steps": [
+    { "key": "genre", "name": "Genre", "review": "internal", "work": ["research"],
+      "describe": "The genre researched from 5+ sources: its tempo, lineup, beat grids, harmony, hook traits, and the elements that make it unforgettable." },
+    { "key": "blueprint", "name": "Blueprint", "review": "document", "work": ["plan"],
+      "describe": "The plan in words, before any note: which genre elements carry the hook and the beat, the hook, tempo, key, chords, one MIDI channel per part, and the story section by section with its intensity." },
+    { "key": "score", "name": "Score and MIDI", "review": "internal", "work": ["music"],
+      "describe": "Every part written in Strudel on its own MIDI channel, checked (harmony lock, the story's curve) and captured as MIDI." },
+    { "key": "instruments", "name": "Instruments", "review": "internal", "work": ["instruments"],
+      "describe": "A sound for every channel, chosen from its real notes as a palette that works together, then auditioned across each part's range." },
+    { "key": "mix", "name": "Mix and master", "review": "internal", "work": ["audio"],
+      "describe": "Rendered with every stem, measured (no silent or clipping part, low end, mud, width) and mastered to -14 LUFS. Or your own master, imported." },
+    { "key": "final", "name": "Final", "review": "audio", "work": ["audio"], "delivers": true,
+      "describe": "You listen: the master, the music sheet (every decision and measurement), the stems and the MIDI." }
+  ],
+  "status_lines": {
+    "genre": "Researching the genre",
+    "blueprint": "Planning the song",
+    "score": "Writing the score",
+    "midi": "Capturing the MIDI",
+    "instruments": "Choosing a sound for every channel",
+    "audition": "Auditioning the instruments",
+    "mix": "Mixing",
+    "master": "Mastering",
+    "deliver": "Packaging your song"
+  },
+  "checks": [
+    { "id": "genre-profile", "title": "The genre is researched, not guessed", "applies_to": ["research"],
+      "how": "node .claude/skills/music/strudel.mjs genre passes: every field of the profile, 5+ different sources actually read, 5+ unforgettable elements with at least one for the hook and one for the beat, each with a concrete how." },
+    { "id": "blueprint-holds", "title": "The plan holds together", "applies_to": ["plan"],
+      "how": "node .claude/skills/music/strudel.mjs plan passes: sections contiguous with a function and an intensity, the genre signature uses the profile's elements (hook and beat), the length fits the genre (or the brief), every part on its own channel, style within 1000 characters." },
+    { "id": "music-check", "title": "The score passes its check and is captured as MIDI", "applies_to": ["music"],
+      "how": "node .claude/skills/music/strudel.mjs check ends with 0 problems (harmony locked to the chart, every role playing, nothing past the end, the intensity curve following the sections) and wrote music/notes.json and out/music/midi/." },
+    { "id": "score-is-notes", "title": "The score holds only the music", "applies_to": ["music"],
+      "how": "music/score.strudel.js sets no sounds, effects or gain (the check warns when it does): notes, velocity and structure only, every part on its role's channel, drums as General MIDI numbers." },
+    { "id": "instruments-fit", "title": "Every channel has an instrument that fits it", "applies_to": ["instruments"],
+      "how": "node .claude/skills/music/strudel.mjs instruments passes (every channel covered, no two parts in one register with the same timbre, at most one lo-fi sound, every drum number has a sound) and audition passes (no part silent or clipping at its lowest, middle or highest note)." },
+    { "id": "mix-measured", "title": "The mix is measured and the master is at level", "applies_to": ["audio"],
+      "how": "node .claude/skills/music/strudel.mjs master passes: no stem silent or clipping on its own, -14 LUFS (±1) with the true peak at or below -1 dBTP, and its balance notes (low end, mud, width) acted on or answered in the note. With the owner's own master: own-master passes and its warnings are in the note." },
+    { "id": "sheet-current", "title": "The music sheet is current", "applies_to": ["audio"],
+      "how": "music/MUSIC-SHEET.md was rewritten by the last engine command (node .claude/skills/music/strudel.mjs sheet) and shows every channel with its instrument and why." }
+  ]
+}

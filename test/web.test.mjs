@@ -93,3 +93,39 @@ test('web: create, upload, start, review, media and the guards', async (t) => {
   assert.match(app.buf.toString(), /Mortiflix Studio/);
   assert.match(app.headers['content-security-policy'], /default-src 'self'/);
 });
+
+test('web: the Music panel hands over the MIDI pack and takes the owner\'s master (resuming a project waiting for it)', async (t) => {
+  const { mkdirSync, writeFileSync, existsSync } = await import('node:fs');
+  const { spawnSync } = await import('node:child_process');
+  const { createProject, startProject, projectPaths } = await import('../src/projects.mjs');
+  const gates = await import('../src/gates.mjs');
+  const root = tempStudio(t);
+  const socketPath = join(tmpdir(), `mfx-web-${randomBytes(4).toString('hex')}.sock`);
+  const srv = await startServer(root, { socketPath, quiet: true, runner: false });
+  t.after(() => srv.close());
+  const s = (...a) => call(socketPath, ...a);
+  const { id } = createProject(root, { pipeline: 'explainer', title: 'Cue', answers: { topic: 'x', music: 'Original score: I finish it from the MIDI (recommended)' } });
+  startProject(root, id);
+  assert.equal((await s('GET', `/api/projects/${id}/music`)).json.expect, null);
+  assert.equal((await s('GET', `/api/projects/${id}/music/midi.zip`)).status, 400);
+
+  const w = projectPaths(root, id).work;
+  mkdirSync(join(w, 'music'), { recursive: true }); mkdirSync(join(w, 'out/music/midi'), { recursive: true });
+  writeFileSync(join(w, 'music/blueprint.json'), JSON.stringify({ title: 'Cue', bpm: 120, meter: '4/4', bars: 2 }));
+  writeFileSync(join(w, 'out/music/midi/01-bass.mid'), 'MThd');
+  const st = (await s('GET', `/api/projects/${id}/music`)).json;
+  assert.equal(st.finish, 'own'); assert.deepEqual(st.midi, ['01-bass.mid']); assert.equal(st.expect.seconds, 4);
+  const zip = await s('GET', `/api/projects/${id}/music/midi.zip`);
+  assert.equal(zip.status, 200); assert.equal(zip.headers['content-type'], 'application/zip'); assert.match(zip.headers['content-disposition'], /Cue - MIDI\.zip/);
+
+  gates.needsYou(root, id, 'Import your master');
+  const wav = spawnSync('ffmpeg', ['-loglevel', 'error', '-f', 'lavfi', '-i', 'sine=frequency=220:duration=4.5', '-f', 'wav', '-'], { maxBuffer: 1 << 24 }).stdout;
+  const short = await s('POST', `/api/projects/${id}/music/master?name=take.wav`, { raw: wav.subarray(0, 44 + 48000) });
+  assert.equal(short.status, 422); assert.match(short.json.error, /score runs 4.00 s/);
+  const ok = await s('POST', `/api/projects/${id}/music/master?name=take.wav`, { raw: wav });
+  assert.equal(ok.status, 200, JSON.stringify(ok.json)); assert.equal(ok.json.resumed, true);
+  assert.ok(existsSync(join(w, 'music/own-master/master.wav')));
+  const audio = await s('GET', `/api/projects/${id}/music/master`);
+  assert.equal(audio.headers['content-type'], 'audio/wav');
+  assert.equal((await s('POST', `/api/projects/${id}/music/master`, { raw: wav, headers: { 'x-mortiflix': '' } })).status, 403);
+});

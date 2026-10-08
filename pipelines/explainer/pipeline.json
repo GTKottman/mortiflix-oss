@@ -56,18 +56,19 @@
         "On-screen text and music only"
       ],
       "default": "Narrated",
-      "help": "Uses the studio's narration voice (Settings \u203a Narration: ElevenLabs, or Qwen3-TTS on your own GPU). With none set up, the studio asks."
+      "help": "Uses the studio's narration voice (Settings › Narration: ElevenLabs, or Qwen3-TTS on your own GPU). With none set up, the studio asks."
     },
     {
       "id": "music",
       "label": "Music",
       "type": "choice",
       "choices": [
-        "Original score",
+        "Original score: I finish it from the MIDI (recommended)",
+        "Original score, rendered by Strudel",
         "No music"
       ],
-      "default": "Original score",
-      "help": "An original score written in Strudel after you approve the animatic, built to the video's own timing (Settings \u203a Setup \u203a Music)."
+      "default": "Original score: I finish it from the MIDI (recommended)",
+      "help": "The studio writes an original score in Strudel to the approved animatic and checks it against the picture. Recommended: you take its MIDI (every part on its own channel, with tempo and hit markers) into your own DAW, make the sound yours, and import the master. Or let Strudel render it."
     },
     {
       "id": "script",
@@ -149,7 +150,7 @@
       "after": [
         "animatic"
       ],
-      "describe": "An original score written to the approved animatic: a story with builds and hits on the frames that matter, under the voice. You review it against the picture."
+      "describe": "An original score written to the approved animatic: notes on MIDI channels, checked for harmony and hits on the frames that matter, with stand-in instruments so you can judge it against the picture. Then you finish it from the MIDI in your own DAW (recommended), or Strudel renders it."
     },
     {
       "key": "build",
@@ -258,7 +259,7 @@
       "applies_to": [
         "audio"
       ],
-      "how": "qc.mjs: integrated loudness -14 LUFS (\u00b11) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
+      "how": "qc.mjs: integrated loudness -14 LUFS (±1) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
     },
     {
       "id": "sync",
@@ -274,7 +275,23 @@
       "applies_to": [
         "music"
       ],
-      "how": "node .claude/skills/music/strudel.mjs check --video-sec <length> --fps <fps> ends with 0 problems: harmony locked to the chart, every hit within a frame of its picture moment, nothing playing past the end, every role playing, and the intensity curve following the sections' asks."
+      "how": "node .claude/skills/music/strudel.mjs check --video-sec <length> --fps <fps> ends with 0 problems (harmony locked to the chart, every hit within a frame of its picture moment, nothing playing past the end, every role playing, the intensity curve following the sections' asks) and captured the MIDI (music/notes.json, out/music/midi/)."
+    },
+    {
+      "id": "music-instruments",
+      "title": "Every channel has an instrument that fits it",
+      "applies_to": [
+        "music"
+      ],
+      "how": "The score holds only notes; node .claude/skills/music/strudel.mjs instruments and audition pass: every channel covered, no two parts in one register with the same timbre, no part silent or clipping across its range."
+    },
+    {
+      "id": "music-source",
+      "title": "The music is the right master",
+      "applies_to": [
+        "audio"
+      ],
+      "how": "When the brief says the owner finishes the music from the MIDI, the mix uses music/own-master/master.wav (strudel.mjs own-master passes) and its warnings are answered in the note; otherwise the approved Strudel render. n/a with a reason on steps before the music."
     },
     {
       "id": "music-under-voice",

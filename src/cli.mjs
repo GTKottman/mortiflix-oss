@@ -4,7 +4,7 @@ import { existsSync, createReadStream, statSync, writeFileSync, readFileSync } f
 import { join, basename, resolve } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { studioRoot, ensureStudio, loadConfig, saveConfig, paths, readJson } from './studio.mjs';
-import { listPipelines, findPipeline } from './pipelines.mjs';
+import { listPipelines, findPipeline, exportPipeline, addPipeline } from './pipelines.mjs';
 import { createProject, addIntakeFile, startProject, listProjects, loadProject, projectPaths, projectPipeline, readEvents } from './projects.mjs';
 import * as gates from './gates.mjs';
 import { Runner, BACKENDS } from './runner.mjs';
@@ -14,6 +14,7 @@ import * as setup from './setup.mjs';
 import { costText } from './usage.mjs';
 import * as booth from './booth.mjs';
 import * as rec from './record.mjs';
+import * as music from './music.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -31,6 +32,8 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
 
   ${C.b('Making videos')}
   mortiflix pipelines                                          what the studio can make
+  mortiflix pipelines export <slug> [--out file.zip]           one shareable zip: the pipeline and every skill it uses
+  mortiflix pipelines add <file.zip | https://…> [--replace]   add someone's pipeline to your studio
   mortiflix new <pipeline> [--title "…"] [--set key=value]… [--file key=path]… [--backend demo]
   mortiflix run [--watch]                                      run sessions until everything waits on you
   mortiflix list                                               your projects
@@ -54,6 +57,11 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
   mortiflix record [<project>] [--device <mic>]                the recording booth in this terminal: read each line, keep the best take
   mortiflix record <project> --import <folder>                 use files you recorded elsewhere, named after the lines (b01-1.wav…)
   mortiflix record --list-devices                              the microphones ffmpeg can record from
+
+  ${C.b('Music')}
+  mortiflix music [<project>]                                  where its music stands: the MIDI pack, your master, the music sheet
+  mortiflix music <project> --midi <file.zip>                  save the MIDI pack (every channel, the arrangement, the cue sheet)
+  mortiflix music <project> --import <file>                    your own master, made from the MIDI pack in your DAW (exported from bar 1)
 
   ${C.b('3D')}
   mortiflix blender [file.blend]                               open the studio's Blender, with its toolkits and Camera Flight
@@ -101,7 +109,7 @@ export async function run(argv = process.argv.slice(2)) {
       case 'blender': needStudio(root); return console.log(`Opening ${setup.openBlender(root, rest)} with the studio's profile (Camera Flight: 3D Viewport › N › Flight).`);
       case 'doctor': return doctor(root);
       case 'demo': return demo(root);
-      case 'pipelines': return a.json ? json(pipelinesView(root)) : pipelines(root);
+      case 'pipelines': return a.json ? json(pipelinesView(root)) : pipelines(root, rest, a);
       case 'new': return newProject(root, rest[0], a);
       case 'run': return runLoop(root, a);
       case 'list': case 'ls': return list(root, a);
@@ -124,6 +132,7 @@ export async function run(argv = process.argv.slice(2)) {
       case 'checks': return checks(root, rest);
       case 'voice': return voiceCmd(root, rest);
       case 'record': return recordCmd(root, rest, a);
+      case 'music': return musicCmd(root, rest, a);
       case undefined: case 'help': return console.log(HELP);
       default: throw new Error(`unknown command "${cmd}" (mortiflix help)`);
     }
@@ -236,7 +245,30 @@ function doctor(root) {
   row(true, 'session.env', extra.length ? `other keys for sessions: ${extra.join(', ')}` : 'no other keys (optional: mortiflix keys)');
 }
 
-function pipelines(root) {
+async function pipelines(root, [sub, arg] = [], a = {}) {
+  if (sub === 'export') {
+    if (!arg) throw new Error('mortiflix pipelines export <slug> [--out file.zip]');
+    const x = exportPipeline(existsSync(paths(root).config) ? root : null, arg);
+    const file = typeof a.out === 'string' ? a.out : `${x.slug}.mortiflix-pipeline.zip`;
+    writeFileSync(file, x.zip);
+    return console.log(`${C.green('✔')} ${file}: ${x.name}, with every skill it uses (${(x.zip.length / 1024).toFixed(0)} KB, version ${x.hash}). Share it; anyone adds it with ${C.b('mortiflix pipelines add <file>')}.`);
+  }
+  if (sub === 'add') {
+    needStudio(root);
+    if (!arg) throw new Error('mortiflix pipelines add <file.zip | https://…> [--replace]');
+    let buf;
+    if (/^https:\/\//.test(arg)) {
+      const res = await fetch(arg, { redirect: 'follow' });
+      if (!res.ok) throw new Error(`couldn't download it: HTTP ${res.status}`);
+      buf = Buffer.from(await res.arrayBuffer());
+    } else if (/^[a-z]+:\/\//i.test(arg)) throw new Error('only https links (or a file on this computer)');
+    else buf = readFileSync(arg);
+    const r = addPipeline(root, buf, { replace: Boolean(a.replace) });
+    console.log(`${C.green('✔')} ${r.name} (${r.slug}) is in your studio: ${r.files.length} files${r.replaced ? ', replacing your earlier copy' : ''}${r.overrides_built_in ? ', in place of the built-in one' : ''}.`);
+    if (r.scripts.length) console.log(`  ${C.acc('!')} It brings scripts its sessions will run (${r.scripts.join(', ')}). Read them before you start a project with it: ${paths(root).pipelines}/${r.slug}`);
+    return;
+  }
+  if (sub) throw new Error('mortiflix pipelines [export <slug> | add <file|url>]');
   for (const p of listPipelines(existsSync(paths(root).config) ? root : null)) {
     if (p.error) { console.log(`${C.red('✖')} ${p.slug}: ${p.error}`); continue; }
     console.log(`${C.b(p.slug.padEnd(14))} ${p.name} ${C.dim(`(${p.source})`)}`);
@@ -903,6 +935,32 @@ async function recordDone(root, id) {
     gates.resume(root, id);
     console.log('Resumed: the studio builds the narration from your takes.');
   }
+}
+
+// Music the owner finishes in their own DAW (src/music.mjs): the MIDI pack out, the master in.
+async function musicCmd(root, rest, a) {
+  const id = pick(root, rest[0]);
+  if (typeof a.midi === 'string') {
+    writeFileSync(a.midi, music.midiPack(root, id));
+    return console.log(`${C.green('✔')} ${a.midi}: every channel, the whole arrangement, the cue sheet (tempo, sections and hits are markers)`);
+  }
+  if (typeof a.import === 'string') {
+    const r = await music.importMaster(root, id, { file: a.import });
+    for (const w of r.warnings) console.log(`  ${C.acc('!')} ${w}`);
+    if (!r.ok) { for (const e of r.errors) console.log(`  ${C.red('✖')} ${e}`); throw new Error('the master was not imported'); }
+    console.log(`${C.green('✔')} Imported ${r.source}: ${r.measured.seconds} s, ${r.measured.lufs} LUFS, true peak ${r.measured.true_peak} dBTP. The studio uses it as the music.`);
+    const p = loadProject(root, id);
+    if (p.state === 'paused' && !p.needs_you?.by_you) { gates.resume(root, id); console.log('Resumed: the studio carries on with your master.'); }
+    return;
+  }
+  const st = music.musicStatus(root, id);
+  if (!st.expect) return console.log('No score yet: the MIDI pack comes once the studio has written the score and it passes its check.');
+  const e = st.expect;
+  console.log(`${C.b(e.title || id)}: ${e.bars} bars at ${e.bpm} BPM (${e.meter}) = ${e.seconds} s${e.first_note_sec ? `, first note at ${e.first_note_sec} s` : ''}`);
+  console.log(`Finishing: ${st.finish === 'own' ? 'you, from the MIDI pack in your own DAW' : 'Strudel renders it (instruments chosen by the studio)'}`);
+  console.log(st.midi.length ? `MIDI pack: ${st.midi.length} files. Save it with ${C.b(`mortiflix music ${id} --midi pack.zip`)}` : 'MIDI pack: not yet (it comes with a score that passes its check)');
+  if (st.own) console.log(`Your master: ${st.own.source}, ${st.own.measured.seconds} s, imported ${st.own.imported_at}${st.own.warnings.length ? C.acc(` · ${st.own.warnings.length} warning(s)`) : ''}`);
+  else if (st.finish === 'own') console.log(`Your master: not yet. Export from bar 1 and run ${C.b(`mortiflix music ${id} --import <file>`)}`);
 }
 
 async function voiceCmd(root, [sub, ...words]) {

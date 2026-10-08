@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { REPO, paths } from './studio.mjs';
 import { projectPaths, loadProject, projectPipeline, readJournal, readEvents } from './projects.mjs';
 import { stepView, stepChecks, submissions } from './gates.mjs';
+import { finishesOwnMaster } from './music.mjs';
 import { blenderSkillDirs, blenderDocsDir, browserHarnessSkill, setupStatusSync } from './setup.mjs';
 
 // The owner's own words: their direction for this video (outranks the pipeline's defaults, never the gate rules).
@@ -40,7 +41,7 @@ function studioSection(root) {
   const st = setupStatusSync(root);
   const lines = [];
   if (st.music.engine === 'none') lines.push('- **Music:** the owner chose no music. Skip any music step with a short note (`mfx step-done`), never improvise one.');
-  else if (st.strudel.ok && st.chrome.ok) lines.push(`- **Music:** Strudel ${st.strudel.version}, scored after the animatic with the **music** skill.${st.music.midi ? ' The owner also wants the **MIDI pack** (every part, the cue sheet) with the final.' : ''}`);
+  else if (st.strudel.ok && st.chrome.ok) lines.push(`- **Music:** Strudel ${st.strudel.version}, through the **music** skill's engine (for a video, scored after the animatic).${st.music.midi ? ' The owner also wants the **MIDI pack** (every part, the cue sheet) with the final.' : ''}`);
   else lines.push('- **Music:** Strudel isn\'t set up yet. When a music step is ready, `mfx needs-you`: "Run `mortiflix setup music`, then resume."');
   if (voiceConfig(root).engine === 'own') lines.push('- **Narration:** the owner narrates in their **own voice**. Write `voice/lines.json` as usual (short lines; delivery notes as a `[tag]` at the start, which the owner sees as direction), then `vo.mjs speak`: it lists the lines that still need a recording and the exact `mfx needs-you` text that sends the owner to the recording booth. When they resume, `speak` passes and `build` makes the track (timed per line).');
   if (st.assets.sites.length && st['browser-harness'].ok) {
@@ -137,7 +138,9 @@ export function writeTorch(root, id, { backend, reason }) {
     return `${q.label || q.id}: ${project.intake.answers[q.id] ?? '(not given)'}`;
   }).join('\n');
 
-  const studioText = studioSection(root);
+  let studioText = studioSection(root);
+  // Who finishes the music, from this brief (src/music.mjs): the owner from the MIDI pack, or the studio in Strudel.
+  if (finishesOwnMaster(project)) studioText += '\n- **This project\'s music:** the owner finishes it themselves from the MIDI pack, in their own DAW. Write and check the score and choose stand-in instruments as usual; after the music is approved, the music skill\'s §9 says how to ask for their master (`strudel.mjs own-master`).';
 
   const md = `# Mortiflix project: ${project.title}
 

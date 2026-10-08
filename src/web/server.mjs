@@ -18,6 +18,7 @@ import * as voice from '../voice/index.mjs';
 import * as keys from '../keys.mjs';
 import * as setup from '../setup.mjs';
 import * as booth from '../booth.mjs';
+import * as music from '../music.mjs';
 import { costText } from '../usage.mjs';
 
 const MIME = {
@@ -187,6 +188,7 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       return after(gates.answerQuestion(root, id, m[1], answer ?? null));
     }
     if (sub.startsWith('/booth')) return boothApi(req, res, id, sub, method, after);
+    if (sub.startsWith('/music')) return musicApi(req, res, id, sub, method, after, url);
     return send(res, 404, { error: 'not found' });
   }
 
@@ -218,6 +220,33 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       const p = loadProject(root, id);
       if (p.state === 'paused') gates.resume(root, id);
       return after({ resumed: p.state === 'paused' });
+    }
+    return send(res, 404, { error: 'not found' });
+  }
+
+  // Music the owner finishes in their own DAW (src/music.mjs): where it stands, the MIDI pack as a zip, importing the
+  // master (raw audio body; a paused project resumes when it was waiting for it), and playing the imported master.
+  async function musicApi(req, res, id, sub, method, after, url) {
+    if (sub === '/music' && method === 'GET') return send(res, 200, music.musicStatus(root, id));
+    if (sub === '/music/midi.zip' && method === 'GET') {
+      const zip = music.midiPack(root, id);
+      const p = loadProject(root, id);
+      const nice = `${p.title.replace(/[^\w .-]+/g, '').trim() || 'mortiflix'} - MIDI.zip`;
+      res.writeHead(200, { 'content-type': 'application/zip', 'content-length': zip.length, 'content-disposition': `attachment; filename="${nice}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      return res.end(zip);
+    }
+    if (sub === '/music/master' && method === 'POST') {
+      const r = await music.importMaster(root, id, { buffer: await rawBody(req, music.MAX_MASTER_BYTES), name: url.searchParams.get('name') || 'master.wav' });
+      if (!r.ok) return send(res, 422, { error: r.errors.join('; '), ...r });
+      const p = loadProject(root, id);
+      if (p.state === 'paused' && !p.needs_you?.by_you) gates.resume(root, id);
+      return after({ ...r, resumed: p.state === 'paused' && !p.needs_you?.by_you });
+    }
+    if (sub === '/music/master' && method === 'GET') {
+      const file = music.musicPaths(root, id).master;
+      if (!existsSync(file)) return send(res, 404, { error: 'no master imported' });
+      res.writeHead(200, { 'content-type': 'audio/wav', 'content-length': statSync(file).size, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+      return createReadStream(file).pipe(res);
     }
     return send(res, 404, { error: 'not found' });
   }

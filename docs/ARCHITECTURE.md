@@ -142,6 +142,25 @@ are done (and which changed since) and `build` works unchanged. Three front ends
 `/api/projects/<id>/booth/…`), the terminal booth (`src/record.mjs`, ffmpeg from the system microphone) and
 `mortiflix record --import` for files recorded elsewhere.
 
+## Music (`pipelines/_shared/skills/music/`, `src/music.mjs`)
+
+The music engine is a skill: `strudel.mjs` runs one stage per command (genre, plan, check, instruments, audition,
+render, master, own-master, sheet) over the project's `music/` folder, on top of `lib/` (the score read as MIDI
+channels and the intensity curve, the harmony lock, MIDI files, the genre profile, instruments as a Strudel layer per
+channel, WAV measurement, ffmpeg mastering, zips) and a headless Chrome running Strudel (`lib/headless.mjs`, a fresh
+page per render). See [MUSIC.md](MUSIC.md).
+
+`src/music.mjs` is the owner's side of it: the MIDI pack as a zip, and importing a master made in the owner's own DAW
+(converted to 48 kHz, measured, checked against the score's length and its first note, written to
+`music/own-master/`). The web studio (the project's Music panel, `/api/projects/<id>/music…`) and
+`mortiflix music` both use it; an import that fits resumes a project that was waiting for it. Whether a brief
+finishes its own music (`finishesOwnMaster`) goes into the session's `CLAUDE.md`.
+
+## Sharing pipelines (`src/pipelines.mjs`, `src/zip.mjs`)
+
+`exportPipeline` snapshots a pipeline with its shared skills (the same self-contained shape a project pins) into one
+zip; `addPipeline` unpacks one into the studio's `pipelines/` after refusing unsafe paths and validating it.
+
 ## The web studio (`src/web/server.mjs`, `web/`)
 
 A plain `node:http` server and a no-build vanilla JS app. JSON API under `/api`, live updates over server-sent events
