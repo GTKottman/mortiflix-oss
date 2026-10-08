@@ -105,6 +105,8 @@ export function startProject(root, id) {
       const ok = q.type === 'files' ? p.intake.files.some((f) => f.field === q.id) : Boolean(p.intake.answers[q.id]);
       if (!ok) throw new UserError(`"${q.label || q.id}" is required`);
     }
+    // A pipeline that makes music needs the studio's music on.
+    if (pipeline.makes === 'music' && musicConfig(loadConfig(root)).engine === 'none') throw new UserError('music is off in this studio: turn it on (mortiflix setup music, or Settings › Setup › Music), then start');
     // Steps that only run when wanted: music needs the studio's music on and a brief that doesn't say "no music".
     const noMusic = musicConfig(loadConfig(root)).engine === 'none' || /^\s*(no|none|off)\b/i.test(String(p.intake.answers.music ?? ''));
     for (const s of pipeline.steps) {

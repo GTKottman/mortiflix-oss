@@ -690,6 +690,7 @@ flowchart LR
           <tr><td><code>explainer</code></td><td>brief → script → style frames → animatic → final</td><td class="n">9</td><td>30 s – 2 min explainers, narrated or not</td></tr>
           <tr><td><code>social-short</code></td><td>brief → hook frames → final</td><td class="n">8</td><td>15–45 s vertical shorts, hook first, works with sound off</td></tr>
           <tr><td><code>logo-sting</code></td><td>directions → final</td><td class="n">6</td><td>a 3–8 s logo animation; the quickest real run</td></tr>
+          <tr><td><code>song</code></td><td>blueprint → final</td><td class="n">7</td><td>an instrumental song from a genre and a topic: researched genre, MIDI, an instrument per channel, a master</td></tr>
         </tbody>
       </table>
       <h3>Shared skills (<code>pipelines/_shared/skills/</code>)</h3>
@@ -698,6 +699,7 @@ flowchart LR
           <tr><td><code>motion-design</code></td><td>the craft of motion: timing, easing, composition</td></tr>
           <tr><td><code>remotion-motion</code></td><td>the Remotion template; <code>setup.mjs</code> installs it once per studio (was 748 MB per project)</td></tr>
           <tr><td><code>voiceover</code></td><td><code>vo.mjs</code> narration (ElevenLabs or Qwen3-TTS), checked by speech-to-text; <code>sound.mjs</code> effects and music beds</td></tr>
+          <tr><td><code>music</code></td><td>the music engine (<code>strudel.mjs</code>): genre → blueprint → score → MIDI → an instrument per channel → audition → master, or your own master from the MIDI pack; every stage checked and written down in <code>MUSIC-SHEET.md</code></td></tr>
           <tr><td><code>final-pass</code></td><td><code>qc.mjs</code>: format, black or frozen frames, loudness, and a frame sheet Claude has to look at</td></tr>
         </tbody>
       </table>

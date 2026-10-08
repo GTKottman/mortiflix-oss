@@ -87,10 +87,17 @@ export class HeadlessStrudel {
     });
     await this.page.send('Runtime.enable');
     await this.page.send('Page.enable');
-    await this.page.send('Page.navigate', { url: `http://127.0.0.1:${this.server.address().port}/` });
+    await this.load();
+    return this;
+  }
+
+  // A fresh Strudel page. Strudel keeps each orbit's effects (reverb, delay) between renders, wired to the previous
+  // render's audio context, so a second render with effects comes out silent: every render gets a new page.
+  async load() {
+    await this.page.send('Page.navigate', { url: `http://127.0.0.1:${this.server.address().port}/?${Date.now()}` });
     for (let i = 0; i < 100; i++) {
       await sleep(100);
-      if ((await this.eval('window.mfxReady === true')) === true) return this;
+      if ((await this.eval('window.mfxReady === true').catch(() => false)) === true) return;
     }
     throw new Error(`Strudel didn't load in Chrome: ${this.errors.join(' / ') || 'timed out'}`);
   }
@@ -109,6 +116,8 @@ export class HeadlessStrudel {
 
   // Renders [0, cycles) to a 16-bit WAV at `out`. `channel` renders one part (its .midichan).
   async render(code, cycles, out, { sampleRate = 48000, channel = 0 } = {}) {
+    if (this.rendered) await this.load();
+    this.rendered = true;
     this.errors = [];
     const name = `r${Date.now()}`;
     try { await this.eval(`mfxRender(${JSON.stringify(code)}, ${Number(cycles)}, ${Number(sampleRate)}, ${JSON.stringify(name)}, ${Number(channel) || 0})`); }

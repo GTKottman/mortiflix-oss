@@ -118,6 +118,7 @@ For scripts: `echo "$KEY" | mortiflix keys set elevenlabs`.
 | `explainer` | brief → script → style frames → transitions → animatic → music → final | 30 s to 2 min explainers, narrated or not, with an original score |
 | `social-short` | brief → hook frames → transitions → final | 45 s to 3 min vertical shorts: hook first, works with sound off |
 | `logo-sting` | directions → final | a 3–8 s logo animation; the quickest real run |
+| `song` | blueprint → final | an instrumental song from a genre and a topic: researched genre, checked score, MIDI, an instrument per channel, a mastered track |
 
 They build in [Remotion](https://www.remotion.dev/) (React video) and check every render with ffmpeg (`qc.mjs`:
 format, black or frozen frames, loudness, a frame sheet Claude has to look at). Remotion has its own license: free for individuals and small teams, a company
@@ -157,12 +158,12 @@ ones inspired by it. The screen never goes blank: no dip to a flat colour, no fl
 `mortiflix setup` (or **Settings › Setup**) explains each part, why it's needed and what it installs, then asks.
 Everything goes into the studio folder, never system-wide. Full details: [docs/SETUP.md](docs/SETUP.md).
 
-- **Music.** After you approve the animatic, the studio scores it with original music written in
-  [Strudel](https://strudel.cc): a dramatic reading, a spotting map from the video's real timing, a blueprint whose
-  sections build, hold back and hit exactly where the picture needs, and a machine check (harmony locked to the
-  chart, every hit within a frame, the intensity curve as planned) before you hear it. Strudel renders it itself.
-  Optionally, a **MIDI pack** (every part, stems, a cue sheet) to remake it in your own DAW.
-  [docs/MUSIC.md](docs/MUSIC.md)
+- **Music.** One music engine writes songs (the `song` pipeline) and video scores, in stages you can follow:
+  the genre researched (songs), a blueprint, the score in [Strudel](https://strudel.cc) as notes only, a machine
+  check (harmony locked to the chart, the intensity curve as planned, every hit within a frame of the picture), the
+  **MIDI** captured, an **instrument chosen for every channel** and auditioned, then a measured master. Every decision
+  is written down in a music sheet. For videos, the recommended finish is yours: download the MIDI pack, make the
+  sound in your own DAW, import your master. [docs/MUSIC.md](docs/MUSIC.md)
 - **Assets.** If you have a website you use for assets, list it: sessions search it and download what fits in your
   own Chrome, with your own login, through browser-use's [browser-harness](https://github.com/browser-use/browser-harness),
   recording every asset's source and licence. Without one, sessions make every visual themselves.

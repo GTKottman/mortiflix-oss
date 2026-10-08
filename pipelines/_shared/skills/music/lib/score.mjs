@@ -18,7 +18,7 @@ export function noteToMidi(note, defaultOctave = 3) {
 }
 export const freqToMidi = (f) => Math.round(69 + 12 * Math.log2(f / 440));
 
-const GM_DRUMS = {
+export const GM_DRUMS = {
   bd: 36, kick: 36, sd: 38, snare: 38, rim: 37, rs: 37, cp: 39, clap: 39, hh: 42, ch: 42, hihat: 42, oh: 46, ho: 46,
   lt: 41, mt: 45, ht: 48, tom: 45, cr: 49, crash: 49, rd: 51, ride: 51, cb: 56, cowbell: 56, sh: 70, shaker: 70, tb: 54, perc: 67,
 };
@@ -58,11 +58,12 @@ export function hapsToChannels({ haps, cps, beatsPerCycle = 4, names = {} }) {
     if (pitch < 0 || pitch > 127) { problems.push(`pitch ${pitch} on channel ${channel} ${at} (MIDI pitch must be 0-127)`); continue; }
     const dur = (h.end - h.begin) * beatsPerCycle * clamp(Number(v.legato ?? 1) || 1, 0.05, 8);
     if (!(dur > 0)) continue;
-    if (!tracks.has(channel)) tracks.set(channel, { channel, name: names[channel] || `CH${String(channel).padStart(2, '0')}`, kind: channel === 10 ? 'drums' : 'pitched', notes: [] });
+    if (!tracks.has(channel)) tracks.set(channel, { channel, name: names[channel] || `CH${String(channel).padStart(2, '0')}`, kind: channel === 10 ? 'drums' : 'pitched', notes: [], sounds: new Set() });
+    if (v.s) tracks.get(channel).sounds.add(String(v.s));
     tracks.get(channel).notes.push({ pitch: Math.round(pitch), start: +(h.begin * beatsPerCycle).toFixed(6), dur: +dur.toFixed(6), velocity: +clamp(Number(v.velocity ?? 0.8), 0.05, 1).toFixed(3) });
   }
   const list = [...tracks.values()].sort((a, b) => a.channel - b.channel);
-  for (const t of list) t.notes.sort((a, b) => a.start - b.start || a.pitch - b.pitch);
+  for (const t of list) { t.notes.sort((a, b) => a.start - b.start || a.pitch - b.pitch); t.sounds = [...t.sounds]; }
   return { bpm: +(cps * 60 * beatsPerCycle).toFixed(3), tracks: list, problems };
 }
 

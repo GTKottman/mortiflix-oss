@@ -37,12 +37,16 @@ Strudel 1.3 (AGPL-3.0) is installed from npm into `tools/strudel`; scores are re
 renderer in a headless Chrome. Your Chrome or Chromium is used if it's there; otherwise Chrome for Testing's headless
 shell is downloaded into `tools/browsers`. You also choose:
 
-- **Original score or no music.** With no music, the music step is skipped in every project.
+- **Original score or no music.** With no music, the music step is skipped in every video and the song pipeline
+  won't start.
 - **A MIDI pack**: every part as MIDI on its own channel, the stems, and a cue sheet (tempo, sections, hit points),
-  delivered with each video so you can remake the music in your own DAW. Strudel's render is still the one used in
-  the video.
+  delivered with every final so you can remake the music in your own DAW.
 
-How the music step writes: [MUSIC.md](MUSIC.md).
+Each brief also says who finishes its music. For videos the recommended answer is you: the studio writes and checks
+the score, and you take its MIDI into your own DAW and import your master (the project's Music panel, or
+`mortiflix music <project> --import <file>`).
+
+How the music engine works: [MUSIC.md](MUSIC.md).
 
 ## Assets
 
