@@ -90,7 +90,7 @@ installed). On other systems the other toolkits still install; Nova is reported 
 ## Platforms
 
 **Mortiflix has mostly been tested on Linux so far.** A Windows version is coming in the next two weeks (by
-October 20, 2026). macOS should work for most of setup (the code has its Blender build, Chrome location and uv
+October 20, 2026): the installer and setup are ready, sessions are next. See [WINDOWS.md](WINDOWS.md). macOS should work for most of setup (the code has its Blender build, Chrome location and uv
 installer) but hasn't been tested, and Nova FX doesn't build there. ComfyUI's install assumes an NVIDIA card with CUDA.
 If an install fails, the walkthrough shows the command and its last lines of output; fixes and reports are welcome.
 

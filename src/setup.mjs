@@ -19,10 +19,11 @@ import { pipeline as streamPipeline } from 'node:stream/promises';
 import { loadConfig, saveConfig, UserError } from './studio.mjs';
 import { voiceConfig } from './voice/index.mjs';
 import * as qwen from './voice/qwen.mjs';
+import * as plat from './platform.mjs';
 
 export const STRUDEL_VERSION = '1.3.0';
 const OS = platform();
-export const REPO_ROOT = join(dirname(new URL(import.meta.url).pathname), '..');
+export const REPO_ROOT = plat.REPO_ROOT;
 const EXE = OS === 'win32' ? '.exe' : '';
 
 export const toolsDir = (root) => join(root, 'tools');
@@ -74,21 +75,20 @@ export const PARTS = [
 
 // ---- running things ----
 
-function which(bin) {
-  const r = spawnSync(OS === 'win32' ? 'where' : 'sh', OS === 'win32' ? [bin] : ['-c', `command -v ${bin}`], { encoding: 'utf8' });
-  return r.status === 0 ? r.stdout.split(/\r?\n/)[0].trim() || null : null;
-}
+const which = (bin) => plat.which(bin);
 
 function version(bin, args = ['--version']) {
-  const r = spawnSync(bin, args, { encoding: 'utf8', timeout: 20_000 });
-  return r.status === 0 ? (r.stdout || r.stderr).split('\n')[0].trim() : null;
+  const c = plat.command(bin, args);
+  const r = spawnSync(c.file, c.args, { ...c.options, encoding: 'utf8', timeout: 20_000 });
+  return r.status === 0 ? (r.stdout || r.stderr).split(/\r?\n/)[0].trim() : null;
 }
 
 // A command whose output streams to `log`, line by line. Rejects on a non-zero exit.
 export function run(cmd, args, { cwd, env, log = () => {} } = {}) {
   return new Promise((ok, fail) => {
     log(`$ ${[cmd, ...args].join(' ')}`);
-    const p = spawn(cmd, args, { cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], shell: OS === 'win32' });
+    const c = plat.command(cmd, args);
+    const p = spawn(c.file, c.args, { ...c.options, cwd, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
     let tail = '';
     const onData = (d) => {
       const s = String(d);
@@ -148,7 +148,10 @@ function chromeCandidates(root) {
   }
   if (OS === 'darwin') out.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Chromium.app/Contents/MacOS/Chromium');
   else if (OS === 'win32') {
-    for (const base of [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean)) out.push(join(base, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+    const bases = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA].filter(Boolean);
+    for (const base of bases) out.push(join(base, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+    // Edge is Chromium and comes with Windows 10 and 11: it renders Strudel the same way, with nothing to download.
+    for (const base of bases) out.push(join(base, 'Microsoft', 'Edge', 'Application', 'msedge.exe'));
   } else for (const b of ['google-chrome-stable', 'google-chrome', 'chromium', 'chromium-browser']) { const p = which(b); if (p) out.push(p); }
   return out;
 }
@@ -267,7 +270,7 @@ async function installTransitions(root, log) {
   const fresh = `${dir}.new`;
   rmSync(fresh, { recursive: true, force: true });
   mkdirSync(fresh, { recursive: true });
-  await run('tar', ['-xzf', tgz, '-C', fresh, '--strip-components=1'], { log });
+  await run(plat.systemTar(), ['-xzf', tgz, '-C', fresh, '--strip-components=1'], { log });
   rmSync(tgz, { force: true });
   if (!existsSync(join(fresh, 'catalog.json'))) throw new Error('the download has no catalog.json');
   rmSync(dir, { recursive: true, force: true });
@@ -280,7 +283,7 @@ async function installStrudel(root, log) {
   const dir = join(toolsDir(root), 'strudel');
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, 'package.json'), JSON.stringify({ name: 'mortiflix-strudel', private: true, license: 'AGPL-3.0-or-later', dependencies: { '@strudel/web': STRUDEL_VERSION } }, null, 2) + '\n');
-  await run(OS === 'win32' ? 'npm.cmd' : 'npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: dir, log });
+  await run('npm', ['install', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: dir, log });
   const s = strudelStatus(root);
   if (!s.ok) throw new Error('npm finished but @strudel/web is missing');
   return s;
@@ -290,7 +293,7 @@ async function installChrome(root, log) {
   const have = chromeStatus(root);
   if (have.ok) { log(`Using ${have.path}`); saveToolPath(root, 'chrome', have.path); return have; }
   const dir = join(toolsDir(root), 'browsers');
-  await run(OS === 'win32' ? 'npx.cmd' : 'npx', ['--yes', '@puppeteer/browsers', 'install', 'chrome-headless-shell@stable', '--path', dir], { log });
+  await run('npx', ['--yes', '@puppeteer/browsers', 'install', 'chrome-headless-shell@stable', '--path', dir], { log });
   const s = chromeStatus(root);
   if (!s.ok) throw new Error('the headless Chrome download finished but no executable was found');
   saveToolPath(root, 'chrome', s.path);
@@ -301,7 +304,7 @@ async function ensureUv(log) {
   const have = findUv();
   if (have) return have;
   log('Installing uv (Astral\'s Python tool manager) for your user: https://docs.astral.sh/uv/');
-  if (OS === 'win32') await run('powershell', ['-ExecutionPolicy', 'ByPass', '-c', 'irm https://astral.sh/uv/install.ps1 | iex'], { log });
+  if (OS === 'win32') await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'ByPass', '-c', 'irm https://astral.sh/uv/install.ps1 | iex'], { log });
   else await run('sh', ['-c', 'curl -LsSf https://astral.sh/uv/install.sh | sh'], { log });
   const uv = findUv();
   if (!uv) throw new Error('uv installed but wasn\'t found in ~/.local/bin: open a new terminal and run setup again');
@@ -358,7 +361,7 @@ async function installBlender(root, log) {
     try { mkdirSync(join(dest, rel.version), { recursive: true }); await run('cp', ['-R', join(mnt, 'Blender.app'), join(dest, rel.version)], { log }); }
     finally { await run('hdiutil', ['detach', mnt], { log }).catch(() => {}); }
   } else {
-    await run('tar', [OS === 'win32' ? '-xf' : '-xJf', file, '-C', dest], { log });
+    await run(plat.systemTar(), [OS === 'win32' ? '-xf' : '-xJf', file, '-C', dest], { log });
   }
   rmSync(file, { force: true });
   const s = blenderStatus(root);
@@ -396,7 +399,7 @@ export function startComfy(root) {
   if (!existsSync(py)) throw new UserError('the studio\'s ComfyUI isn\'t installed (mortiflix setup narration)');
   const port = Number(new URL(voiceConfig(root).qwen.url).port || 8188);
   const out = createWriteStream(join(ws, 'comfyui.log'), { flags: 'a' });
-  const p = spawn(py, [join(ws, 'main.py'), '--listen', '127.0.0.1', '--port', String(port)], { cwd: ws, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+  const p = spawn(py, [join(ws, 'main.py'), '--listen', '127.0.0.1', '--port', String(port)], { cwd: ws, detached: true, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
   p.stdout.pipe(out); p.stderr.pipe(out);
   p.unref();
   return { pid: p.pid, log: join(ws, 'comfyui.log') };
@@ -441,7 +444,7 @@ async function fetchRepo(root, repo, log) {
   const tgz = await download(`https://codeload.github.com/${repo}/tar.gz/HEAD`, join(toolsDir(root), 'downloads', `${name}.tar.gz`), log);
   rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
-  await run('tar', ['-xzf', tgz, '-C', dest, '--strip-components=1'], { log });
+  await run(plat.systemTar(), ['-xzf', tgz, '-C', dest, '--strip-components=1'], { log });
   rmSync(tgz, { force: true });
   return dest;
 }

@@ -114,6 +114,14 @@ depend on setup (`harness/skills/blender-3d`, `harness/skills/assets`, the toolk
 are installed into each project by `torch.mjs`. A pipeline step with `"when": "music"` is marked `skipped` at start
 when the studio or the brief has no music; a skipped step counts as finished only once its own predecessors are.
 
+## Platforms (`src/platform.mjs`)
+
+What differs between Linux, macOS and Windows: finding a program on the `PATH` (with `PATHEXT` on Windows),
+running `.cmd` programs like npm through `cmd.exe` with quoted arguments, Windows' own `tar.exe`, Git Bash, the
+`PATH` separator and opening a file. Each function takes `platform`, `env` and `exists` as options, so
+`test/platform.test.mjs` checks the Windows behaviour on any machine. The Windows installer is `install.ps1`; the
+port's status is in [WINDOWS.md](WINDOWS.md).
+
 ## Keys (`src/keys.mjs`)
 
 One registry of the keys a studio can hold (Anthropic, ElevenLabs), what each is for, and when a project needs it:
