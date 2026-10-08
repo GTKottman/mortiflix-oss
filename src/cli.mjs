@@ -14,6 +14,7 @@ import * as setup from './setup.mjs';
 import { costText } from './usage.mjs';
 import * as booth from './booth.mjs';
 import * as rec from './record.mjs';
+import * as plat from './platform.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -187,6 +188,9 @@ async function init(root, a) {
   console.log(`\n  Then: ${C.b('mortiflix demo')} for a free walk-through, or ${C.b('mortiflix serve')} to open the studio in your browser.`);
 }
 
+// What to install a missing tool with on Windows (doctor's hint).
+const WINGET = process.platform === 'win32' ? { ffmpeg: 'Gyan.FFmpeg', ffprobe: 'Gyan.FFmpeg', npx: 'OpenJS.NodeJS.LTS', git: 'Git.Git' } : {};
+
 function doctor(root) {
   const config = existsSync(paths(root).config) ? loadConfig(root) : null;
   const row = (ok, name, detail) => console.log(`${ok ? C.green('✔') : C.red('✖')} ${name.padEnd(14)} ${C.dim(detail)}`);
@@ -197,9 +201,13 @@ function doctor(root) {
     const r = b.available(config || loadConfig(root), root);
     row(r.ok, name, `${r.detail}${config?.backend === name ? '  ← in use' : ''}`);
   }
-  for (const [bin, why] of [['ffmpeg', 'renders, checks, the demo'], ['ffprobe', 'the final pass'], ['npx', 'Remotion']]) {
-    const r = spawnSync(bin, ['-version'], { encoding: 'utf8' });
-    row(r.status === 0 || (bin === 'npx' && spawnSync('npx', ['--version']).status === 0), bin, why);
+  for (const [bin, why] of [['ffmpeg', 'renders, checks, the demo'], ['ffprobe', 'the final pass'], ['npx', 'Remotion'], ['git', 'installs the 3D toolkits and local narration']]) {
+    const found = plat.which(bin);
+    row(Boolean(found) || bin === 'git', bin, found ? why : `${why}: not found${WINGET[bin] ? ` (winget install ${WINGET[bin]})` : ''}`);
+  }
+  if (process.platform === 'win32') {
+    const bash = plat.findGitBash();
+    row(Boolean(bash), 'git bash', bash || 'sessions run shell commands in Git Bash: install Git for Windows (winget install Git.Git)');
   }
   if (process.platform === 'linux') row(spawnSync('bwrap', ['--version']).status === 0, 'bwrap', `optional session sandbox (${config?.sandbox ? 'on' : 'off'})`);
   for (const k of keys.keyStatus(root)) {
@@ -357,8 +365,11 @@ async function review(root, given) {
           } else console.log(`${C.b(`[${i}] ${it.label}`)} ${C.dim(it.kind)}  ${join(projectPaths(root, id).state, it.file)}`);
         });
         const files = sub.items.filter((it) => it.file);
-        if (files.length && process.platform === 'linux' && (await rl.question(C.dim('\nOpen the files? [y/N] '))).toLowerCase() === 'y') {
-          for (const it of files) spawn('xdg-open', [join(projectPaths(root, id).state, it.file)], { detached: true, stdio: 'ignore' }).unref();
+        if (files.length && (await rl.question(C.dim('\nOpen the files? [y/N] '))).toLowerCase() === 'y') {
+          for (const it of files) {
+            const o = plat.openCommand(join(projectPaths(root, id).state, it.file));
+            spawn(o.file, o.args, { ...o.options, detached: true, stdio: 'ignore' }).on('error', () => {}).unref();
+          }
         }
         const answers = {};
         for (const q of sub.questions) {
