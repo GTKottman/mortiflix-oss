@@ -93,7 +93,8 @@ test('inside a studio session the owner\'s commands are refused', async (t) => {
   const root = await waitingStudio(t);
   const session = { MFX_TOKEN: 'a-session-token' };
   for (const args of [['respond', 'acme', 'directions', '--approve'], ['answer', 'acme', 'q1', 'yes'], ['review', 'acme'],
-    ['reopen', 'acme', 'directions', 'again'], ['pause', 'acme'], ['resume', 'acme'], ['cancel', 'acme'], ['checks', 'approve', 'c1']]) {
+    ['reopen', 'acme', 'directions', 'again'], ['pause', 'acme'], ['resume', 'acme'], ['cancel', 'acme'], ['checks', 'approve', 'c1'],
+    ['publish', 'acme', '--to', 'x', '--profile', 'me', '--yes']]) {
     const r = await cli(root, args, session);
     assert.equal(r.status, 1, args.join(' '));
     assert.match(r.stderr, /only the owner does that/, args.join(' '));

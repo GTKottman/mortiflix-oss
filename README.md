@@ -126,6 +126,7 @@ Mortiflix runs on your own accounts: there's nothing to sign up for. `mortiflix 
 ```
 Anthropic API key   only for the anthropic-api backend (Claude Code uses your own login)
 ElevenLabs API key  only for ElevenLabs narration, sound effects and music
+Upload-Post API key only for `mortiflix publish` (optional; sessions never get it)
 Other keys          anything a pipeline's tools read from the environment, e.g. GEMINI_API_KEY
 ```
 
@@ -193,6 +194,23 @@ Everything goes into the studio folder, never system-wide. Full details: [docs/S
 - **3D.** Blender with the studio's toolkits, in its own profile (your Blender setup is never touched): MoBlend
   (MoGraph), Camera, Animate, Math, Circuits, Camera Flight for flying the camera yourself (`mortiflix blender`), and
   **Nova FX**, Mortiflix's own particle engine (particles, fire, sparks, fireworks), which builds on Linux only for now.
+
+## Publishing (optional)
+
+Once you approve a final, the video is yours to download. If you'd rather post it straight from the studio, connect
+your accounts on [Upload-Post](https://upload-post.com), add its key with `mortiflix keys`, and:
+
+```sh
+mortiflix publish <project>                                   # where the brief said (TikTok / Reels / Shorts), asks first
+mortiflix publish <project> --to linkedin,x --title "…"       # somewhere else, with your own caption
+mortiflix publish <project> --at 2026-10-20T18:00 --timezone Europe/Madrid   # scheduled
+mortiflix publish <project> --status                          # per platform, with the links once they're live
+```
+
+Only you publish: it's a command you run, never something a session can reach (`mfx` has no way to it), and only a
+delivered project's approved final goes out. It shows what goes where and asks before sending (`--yes` skips the
+question in scripts). Running it again never posts the same video twice. `--profile` is the Upload-Post profile your
+accounts are connected under; it's remembered after the first time.
 
 ## Make your own pipeline
 

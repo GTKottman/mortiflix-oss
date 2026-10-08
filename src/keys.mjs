@@ -23,6 +23,13 @@ export const KEYS = {
     get: 'elevenlabs.io › Developers › API keys',
     for: 'narration, sound effects and music with ElevenLabs. Not needed for local narration (Qwen3-TTS) or none.',
   },
+  uploadpost: {
+    name: 'Upload-Post API key',
+    secret: 'upload_post_api_key',
+    env: 'UPLOAD_POST_API_KEY',
+    get: 'app.upload-post.com › API Keys',
+    for: 'publishing a delivered video to TikTok, Instagram, YouTube and others with `mortiflix publish`. Optional: nothing is ever posted on its own.',
+  },
 };
 
 // Where a key comes from: saved in this studio, session.env, the environment Mortiflix was started with, or nowhere.
@@ -34,6 +41,12 @@ export function keySource(root, id) {
   if (process.env[k.env]) return 'environment';
   if (id === 'anthropic' && anthropicCredentials(root).other) return 'environment';
   return null;
+}
+
+// The key itself, for the studio's own calls (publishing). Sessions never get this one.
+export function keyValue(root, id) {
+  const k = KEYS[id];
+  return readSecret(root, k.secret) || process.env[k.env] || null;
 }
 
 // Which keys a project uses, given how the studio is set up. `steps` narrows it to the work that's about to run.
@@ -90,6 +103,12 @@ export async function verifyKey(root, id, value, { fetch = globalThis.fetch } = 
       if (res.ok) return { ok: true, detail: 'the Claude API accepted it' };
       if (res.status === 401 || res.status === 403) return { ok: false, detail: 'the Claude API refused it (check that you copied the whole key)' };
       return { ok: null, detail: `couldn't check it (Claude API answered ${res.status})` };
+    }
+    if (id === 'uploadpost') {
+      const res = await fetch(`${process.env.UPLOAD_POST_API || 'https://api.upload-post.com'}/api/uploadposts/me`, { headers: { Authorization: `Apikey ${key}` } });
+      if (res.ok) { const me = await res.json().catch(() => ({})); return { ok: true, detail: me.plan ? `${me.plan} plan` : 'Upload-Post accepted it' }; }
+      if (res.status === 401 || res.status === 403) return { ok: false, detail: 'Upload-Post refused it (check that you copied the whole key)' };
+      return { ok: null, detail: `couldn't check it (Upload-Post answered ${res.status})` };
     }
     if (id === 'elevenlabs') {
       const a = await new ElevenLabs({ key, server: voiceConfig(root).elevenlabs.server, fetch }).account();

@@ -31,7 +31,7 @@ The gates are enforced by the studio process, not by the prompt:
 - it can't change what you already reviewed: submissions are copied into `state/`, outside the working folder;
 - it can't submit files from outside its project folder (paths and symlinks are resolved and checked).
 
-The CLI's own decision commands (`mortiflix respond`, `answer`, `review`, `reopen`, …) refuse to run inside a session
+The CLI's own decision commands (`mortiflix respond`, `answer`, `review`, `reopen`, `publish`, …) refuse to run inside a session
 (`MFX_TOKEN` is set there), so a session that finds `mortiflix` on its `PATH` can't approve its own work by accident.
 That's a guard, not a wall. Unsandboxed, a determined session could still edit `state/` files directly with its shell. If that's in your threat
 model, turn the sandbox on.
