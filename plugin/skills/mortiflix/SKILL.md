@@ -84,10 +84,10 @@ On a first run, offer `mortiflix demo`. It's free and takes seconds: a logo stin
 demo backend, with real gates. Then review it with them (step 6). It's the fastest way to learn what a gate feels
 like.
 
-## 4. A new video (`/mortiflix new [pipeline]`)
+## 4. A new video or song (`/mortiflix new [pipeline]`)
 
 1. `mortiflix pipelines --json`. Without a pipeline argument, offer each one: its name, what it's for and its
-   reviewed steps.
+   reviewed steps. `song` makes an instrumental song with no picture, so its final review is audio.
 2. Ask for a title, then the `intake` questions in order: required ones first; `choice` through AskUserQuestion with
    the default marked; `long` in chat; `files` as paths on this machine (check that they exist). Don't invent
    answers. Skip optional ones the owner passes on.
@@ -140,8 +140,25 @@ missing key, the recording booth, or a session that got stuck. `mortiflix resume
    - **Approve**: only on the owner's clear yes. `mortiflix respond <id> <step> --approve [--answer qid=value …]`
 5. After the responses, go back to step 5 to run the next sessions. Then return here.
 
+**Music from the owner's own DAW.** The brief can say the owner finishes the music themselves (the song pipeline's
+`finish` question, or the explainer's music answer). Then the score is reviewed with stand-in instruments, and once
+it's approved the project pauses for the owner's master:
+1. `mortiflix music <id>` says where it stands: length, tempo, when the first note sounds, the MIDI pack, any master.
+2. Ask where to save the pack, then `mortiflix music <id> --midi <path>.zip`. It holds every channel, the
+   arrangement and the cue sheet.
+3. The owner gives each channel its sound in their DAW, mixes, and exports from bar 1 to the end.
+4. `mortiflix music <id> --import <file>` checks that the master fits the score and resumes the project. Read out
+   any warnings. If it's refused, say why (usually its length, or a late first sound) so they can export again.
+
 Sessions sometimes propose new error checks for the studio. List them with `mortiflix checks`. The owner decides
 each one: `mortiflix checks approve <id>` or `reject <id>`.
+
+## Pipelines from other people
+
+- `mortiflix pipelines export <slug> [--out <file>.zip]` packs a pipeline with every skill it uses, for sharing.
+- `mortiflix pipelines add <file.zip | https://…> [--replace]` adds someone else's. Ask first: its skills bring scripts
+  that the studio's sessions will run on this machine. The command lists them. Offer to read them with the owner
+  before the first project that uses the pipeline.
 
 ## 7. Delivered
 

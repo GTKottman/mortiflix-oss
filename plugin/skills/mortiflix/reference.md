@@ -25,6 +25,10 @@
 | `mortiflix setup music strudel [--midi \| --no-midi]` · `setup music none` | |
 | `mortiflix setup assets <url>…` · `setup assets --clear` | |
 | `mortiflix voice none \| own` | narration choices that need no terminal |
+| `mortiflix music <id>` | where its music stands: length and tempo, the MIDI pack, the owner's master |
+| `mortiflix music <id> --midi <file>.zip` | save the MIDI pack (every channel, the arrangement, the cue sheet) |
+| `mortiflix music <id> --import <file>` | the owner's own master (wav, aiff, flac, mp3, m4a, ogg): checked against the score, then the project resumes |
+| `mortiflix pipelines export <slug> [--out <file>.zip]` · `pipelines add <file \| https://…> [--replace]` | share a pipeline, or add someone else's (it brings scripts: read them first) |
 | `mortiflix config [key [value]]` | e.g. `config backend claude-code`, `config sandbox true` |
 | `mortiflix serve` | the web studio on http://127.0.0.1:4646 (also runs sessions by itself) |
 | `mortiflix doctor` | what's installed |
@@ -89,6 +93,7 @@ Quoting: put each note in single quotes. Write an apostrophe inside one as `'\''
 | "The last two sessions stopped without moving the project forward (…)" | Show the error and the last `log` events. Fix what it names if the owner agrees (a missing tool: `mortiflix doctor`), then resume. |
 | "8 sessions in a row ended without submitting…" | The work is stuck in a loop. Show the log. A note through `reopen`, or a resume after a fix, usually gets it moving. |
 | "Paused by you" | `mortiflix resume <id>` when they want it back. |
+| "The score is approved. On the project page, Music › Download MIDI…" | The owner finishes the music in their DAW. Save the pack (`mortiflix music <id> --midi <file>.zip`), then import their master (`mortiflix music <id> --import <file>`). Importing resumes the project, so no `resume` is needed. |
 | anything else | A session asked for something only the owner can do. Read it out, and resume once it's handled. |
 
 ## Errors and what they mean
