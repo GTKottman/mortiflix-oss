@@ -79,7 +79,8 @@ export async function run({ root, workdir, prompt, env, transcript, onActivity, 
 
   const code = await new Promise((ok) => { p.on('close', ok); p.on('error', (e) => { stderr += e.message; ok(127); }); });
   signal?.removeEventListener('abort', kill);
-  out.end();
+  // Closed before returning: Windows can't delete a folder while a file in it is still open.
+  await new Promise((ok) => out.end(ok));
   const usage = result?.usage ? { input_tokens: (result.usage.input_tokens || 0) + (result.usage.cache_read_input_tokens || 0) + (result.usage.cache_creation_input_tokens || 0), output_tokens: result.usage.output_tokens || 0 } : null;
   if (signal?.aborted) return { ok: false, error: 'stopped', usage };
   if (code !== 0 || result?.is_error) {

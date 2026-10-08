@@ -138,7 +138,8 @@ export async function run({ root, workdir, prompt, env, transcript, onActivity, 
     return { ok: false, error: e.message, usage };
   } finally {
     shell.close();
-    out.end();
+    // Closed before returning: Windows can't delete a folder while a file in it is still open.
+    await new Promise((ok) => out.end(ok));
   }
 }
 
