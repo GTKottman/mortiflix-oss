@@ -118,9 +118,18 @@ when the studio or the brief has no music; a skipped step counts as finished onl
 
 What differs between Linux, macOS and Windows: finding a program on the `PATH` (with `PATHEXT` on Windows),
 running `.cmd` programs like npm through `cmd.exe` with quoted arguments, Windows' own `tar.exe`, Git Bash, the
-`PATH` separator and opening a file. Each function takes `platform`, `env` and `exists` as options, so
-`test/platform.test.mjs` checks the Windows behaviour on any machine. The Windows installer is `install.ps1`; the
-port's status is in [WINDOWS.md](WINDOWS.md).
+`PATH` separator and opening a file. For sessions:
+- where the bridge listens (`ipcPath`: a named pipe on Windows);
+- a session's `PATH` under the one key Windows already uses (`withPath`: `Path` and `PATH` side by side would leave
+  the child to pick);
+- stopping a process and everything it started (`killTree`: a process group, or `taskkill /T`);
+- Git Bash paths in the API backend's editor (`fromShellPath`);
+- secrets only you can read (`restrictToOwner`: mode 600, or an ACL).
+
+Each function takes `platform`, `env` and `exists` as options, so `test/platform.test.mjs` checks the Windows
+behaviour on any machine. `scripts/windows-smoke.mjs` runs the session half for real, with a stand-in for `claude`
+and no cost. CI runs it on Windows and Linux for every push. The Windows installer is `install.ps1`; the port's
+status is in [WINDOWS.md](WINDOWS.md).
 
 ## Keys (`src/keys.mjs`)
 

@@ -83,3 +83,38 @@ test('pathDelimiter', () => {
   assert.equal(plat.pathDelimiter('win32'), ';');
   assert.equal(plat.pathDelimiter('linux'), ':');
 });
+
+test('sessions on Windows: a named pipe for the bridge, one PATH key, Git Bash paths, whole-tree kills', () => {
+  assert.equal(plat.ipcPath('mfx-1a2b', { platform: 'win32' }), '\\\\.\\pipe\\mfx-1a2b');
+  assert.equal(plat.ipcPath('mfx-1a2b', { platform: 'linux', tmp: '/tmp' }), '/tmp/mfx-1a2b.sock');
+
+  // Windows' own "Path" keeps its name and gets the repo's bin first; a stray "PATH" beside it is folded in, not left
+  // for the child to pick between.
+  const env = plat.withPath({ Path: 'C:\\Windows\\System32', PATH: '', TEMP: 'C:\\t' }, 'C:\\mfx\\bin', { platform: 'win32' });
+  assert.deepEqual(env, { Path: 'C:\\mfx\\bin;C:\\Windows\\System32', TEMP: 'C:\\t' });
+  assert.deepEqual(plat.withPath({ PATH: '/usr/bin' }, '/mfx/bin', { platform: 'linux' }), { PATH: '/mfx/bin:/usr/bin' });
+  assert.deepEqual(plat.withPath({}, '/mfx/bin', { platform: 'linux' }), { PATH: '/mfx/bin' });
+
+  assert.equal(plat.fromShellPath('/c/Users/Ada Lovelace/video/a.png', { platform: 'win32' }), 'C:\\Users\\Ada Lovelace\\video\\a.png');
+  assert.equal(plat.fromShellPath('/d', { platform: 'win32' }), 'D:\\');
+  for (const p of ['video/a.png', 'C:\\x']) assert.equal(plat.fromShellPath(p, { platform: 'win32', cygpath: () => 'never' }), p);
+  // Git Bash's own folders go to its cygpath; if it can't say, the path stays as it is (and is refused).
+  const temp = 'C:\\Users\\ada\\AppData\\Local\\Temp\\x';
+  assert.equal(plat.fromShellPath('/tmp/x', { platform: 'win32', cygpath: (p) => (p === '/tmp/x' ? temp : null) }), temp);
+  assert.equal(plat.fromShellPath('/usr/x', { platform: 'win32', cygpath: () => null }), '/usr/x');
+  assert.equal(plat.fromShellPath('/c/x', { platform: 'linux' }), '/c/x');
+
+  assert.deepEqual(plat.groupOptions({ platform: 'win32' }), { windowsHide: true });
+  assert.deepEqual(plat.groupOptions({ platform: 'linux' }), { detached: true });
+  const calls = [];
+  plat.killTree(4242, { platform: 'win32', run: (...a) => calls.push(a.slice(0, 2)) });
+  assert.deepEqual(calls, [['taskkill', ['/T', '/F', '/PID', '4242']]]);
+});
+
+test('secrets on Windows get an ACL for the current user alone', () => {
+  const calls = [];
+  const ok = plat.restrictToOwner('C:\\Users\\ada\\Mortiflix\\secrets.json.tmp', { platform: 'win32', env: { USERDOMAIN: 'LAPPY', USERNAME: 'ada' }, run: (...a) => { calls.push(a.slice(0, 2)); return { status: 0 }; } });
+  assert.equal(ok, true);
+  assert.deepEqual(calls, [['icacls', ['C:\\Users\\ada\\Mortiflix\\secrets.json.tmp', '/inheritance:r', '/grant:r', 'LAPPY\\ada:F']]]);
+  assert.equal(plat.restrictToOwner('x', { platform: 'win32', env: {}, run: () => ({ status: 0 }) }), false);
+});

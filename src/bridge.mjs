@@ -1,19 +1,20 @@
 // The bridge: the only channel between a session and the studio. While a session runs, the runner listens on a
-// private Unix socket (never a network port); `mfx` inside the session talks to it with a per-session token.
+// private Unix socket, or a named pipe on Windows (never a network port); `mfx` inside the session talks to it with a per-session token.
 // Everything a session asks for goes through the gate rules in gates.mjs.
 import { createServer } from 'node:http';
 import { rmSync, realpathSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import * as gates from './gates.mjs';
 import { projectPipeline, loadProject, update, now } from './projects.mjs';
 import { appendTaste } from './torch.mjs';
 import { isInside, loadConfig } from './studio.mjs';
+import { ipcPath } from './platform.mjs';
 
 export async function openBridge({ root, projectId, sessionId, workdir, renders, sessionEnv }) {
   const token = randomBytes(24).toString('hex');
-  const socket = join(tmpdir(), `mfx-${randomBytes(6).toString('hex')}.sock`);
+  const socket = ipcPath(`mfx-${randomBytes(6).toString('hex')}`, { tmp: tmpdir() });
+  const pipe = process.platform === 'win32'; // a named pipe goes away with its server: there's no file to remove
   const work = realpathSync(workdir);
 
   const commands = {
@@ -64,13 +65,13 @@ export async function openBridge({ root, projectId, sessionId, workdir, renders,
       }
     });
   });
-  if (existsSync(socket)) rmSync(socket);
+  if (!pipe && existsSync(socket)) rmSync(socket);
   await new Promise((ok, fail) => server.listen(socket, ok).on('error', fail));
   return {
     socket,
     token,
     env: { MFX_SOCKET: socket, MFX_TOKEN: token, MFX_PROJECT: projectId },
-    close: () => new Promise((ok) => { server.close(() => ok()); server.closeAllConnections?.(); rmSync(socket, { force: true }); }),
+    close: () => new Promise((ok) => { server.close(() => ok()); server.closeAllConnections?.(); if (!pipe) rmSync(socket, { force: true }); }),
   };
 }
 

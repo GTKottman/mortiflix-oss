@@ -44,7 +44,8 @@ sessions and days.
 ## Quick start
 
 > **Tested mostly on Linux so far.** A Windows version is coming in the next two weeks (by October 20, 2026): the
-> installer is ready, sessions are next ([docs/WINDOWS.md](docs/WINDOWS.md)). macOS should mostly work but hasn't
+> installer and sessions work and are checked on Windows in CI; a whole video on a real Windows PC is next
+> ([docs/WINDOWS.md](docs/WINDOWS.md)). macOS should mostly work but hasn't
 > been tested yet.
 
 You need **Node 20+** and **ffmpeg**. For real videos you also need one of:

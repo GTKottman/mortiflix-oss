@@ -1,7 +1,9 @@
 # Windows
 
-> **Work in progress.** Installing works as described below, but a session (the part where Claude makes the video)
-> doesn't run on Windows yet: see [What's left](#whats-left). The goal is a working Windows version by October 20, 2026.
+> **Nearly there.** Installing works as described below, and sessions (the part where Claude makes the video) now
+> run on Windows. Every push checks them on a real Windows machine in CI (`scripts/windows-smoke.mjs`), with a
+> stand-in for Claude. What hasn't happened yet is a whole video made by real Claude on a Windows PC: see
+> [What's left](#whats-left). The goal is a tested Windows version by October 20, 2026.
 
 ## Install
 
@@ -64,7 +66,8 @@ Claude Code are ordinary programs: remove them in Settings › Apps, or `winget 
 
 ## What's left
 
-Found by reading the code for Linux-only assumptions. Checked items are done on this branch.
+Found by reading the code for Linux-only assumptions. Checked items are done. "CI" means
+`scripts/windows-smoke.mjs` proves it on GitHub's `windows-latest` for every push (`.github/workflows/test.yml`).
 
 **Installing**
 - [x] `install.ps1`: prerequisites with winget, Claude Code, clone/update, `npm link`, `mortiflix init`
@@ -73,18 +76,22 @@ Found by reading the code for Linux-only assumptions. Checked items are done on 
 - [x] `mortiflix doctor`: Git Bash, git, and winget hints
 - [ ] Run the installer and every setup part on a real Windows 10 and 11 machine
 
-**Running sessions** (next)
-- [ ] The bridge listens on a Unix socket path (`src/bridge.mjs`); on Windows it has to be a named pipe
-      (`\\.\pipe\mfx-…`)
-- [ ] Sessions' `PATH` is joined with `:` (`src/backends/claude-code.mjs`, `src/backends/anthropic-api.mjs`); use
-      `pathDelimiter()`
-- [ ] `bin/mfx` is a Node script with a shebang: Git Bash runs it, but Claude Code's PowerShell tool needs an
-      `mfx.cmd` next to it
-- [ ] Stopping a session kills its process group (`process.kill(-pid)`: claude-code backend, the API backend's
-      shell, the render queue); Windows needs `taskkill /T /F /PID`
-- [ ] The API backend's shell is `bash`; on Windows, Git Bash from `findGitBash()`
-- [ ] The Remotion template links `node_modules` with a directory symlink (needs Developer Mode or admin on
-      Windows); use a junction. It also runs `sleep`, which Windows doesn't have
-- [ ] `secrets.json` relies on file mode 600, which Windows ignores; the user profile's permissions protect it.
-      Say so in SECURITY.md, or set an ACL
+**Running sessions**
+- [x] The bridge listens on a named pipe (`\\.\pipe\mfx-…`, `ipcPath`). CI.
+- [x] A session's `PATH` gets `bin/` first, under the one key Windows already uses (`Path`), with `;` (`withPath`).
+      Two keys differing only in case would leave the child to pick one. CI.
+- [x] `mfx` works from Claude Code's Git Bash (the shebang script) and from cmd and PowerShell (`bin/mfx.cmd`). CI.
+- [x] The prompt goes to `claude` on stdin, so `claude.cmd` (an npm install of Claude Code) gets it intact through
+      cmd.exe. The session is told where Git Bash is (`CLAUDE_CODE_GIT_BASH_PATH`). CI, with a stand-in `claude.cmd`.
+- [x] Renders of `.cmd` programs (`npx remotion …`) start through cmd.exe (`command()`). CI.
+- [x] Stopping a session stops its whole process tree with `taskkill /T /F` (`killTree`): the claude-code backend,
+      the API backend's shell and the render queue. CI checks that a render and its child are gone.
+- [x] The API backend's shell is Git Bash. Its editor reads Git Bash paths: `/c/Users/…` directly, and Git Bash's
+      own folders (`/tmp/…`) through its `cygpath`. CI.
+- [x] The Remotion template links `node_modules` with a junction (no Developer Mode or admin), runs npm through a
+      shell, and waits without `sleep`. CI installs it and renders 15 frames of the template.
+- [x] `secrets.json` and `session.env` get an ACL for you alone (`icacls`; Windows always keeps SYSTEM and
+      Administrators). CI.
+- [ ] A whole video made by **real** Claude (the `claude-code` and `anthropic-api` backends) on a Windows PC
+- [ ] The terminal recording booth (`mortiflix record`, ffmpeg's dshow input) with a real microphone
 - [ ] Nova FX's C core: build with MSVC or MinGW (it uses OpenMP and Vulkan)

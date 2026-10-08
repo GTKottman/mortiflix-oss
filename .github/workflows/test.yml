@@ -1,0 +1,44 @@
+name: test
+
+on:
+  push:
+    branches: [main, windows-sessions]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: npm ci
+      - run: npm test
+      - run: node scripts/windows-smoke.mjs
+
+  # The session half on real Windows: the bridge on a named pipe, mfx from Git Bash and cmd, claude.cmd,
+  # renders of .cmd programs, process trees, secrets ACLs and the Remotion junction (scripts/windows-smoke.mjs).
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Chocolatey's feed sometimes times out and still exits 0: retry, then fail here if ffmpeg isn't there.
+      - name: Install ffmpeg
+        shell: pwsh
+        run: |
+          for ($i = 1; $i -le 3; $i++) {
+            choco install ffmpeg -y --no-progress
+            if (Get-Command ffprobe -ErrorAction SilentlyContinue) { break }
+            Start-Sleep -Seconds 20
+          }
+          ffmpeg -version | Select-Object -First 1
+      - run: npm ci
+      - run: node scripts/windows-smoke.mjs
+        env:
+          SMOKE_REMOTION: '1'

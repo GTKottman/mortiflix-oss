@@ -38,7 +38,7 @@ if (existsSync(modules) || isLink(modules)) {
     if (!ownExtras.length) {
       ensureShared();
       rmSync(modules);
-      symlinkSync(join(dir, 'node_modules'), modules, 'dir');
+      link(join(dir, 'node_modules'), modules);
       writeFileSync(join(target, 'package.json'), JSON.stringify({ ...mine, dependencies: tpl.dependencies, devDependencies: tpl.devDependencies }, null, 2) + '\n');
       console.log(`node_modules: moved to the studio's current shared install (the template gained packages): ${dir}`);
       process.exit(0);
@@ -55,7 +55,7 @@ if (!shared) {
 }
 
 ensureShared();
-symlinkSync(join(dir, 'node_modules'), modules, 'dir');
+link(join(dir, 'node_modules'), modules);
 console.log(`node_modules: linked to the studio's shared install (${dir})`);
 console.log('Need another package? Replace the link with a local install first: rm node_modules && npm install && npm install <pkg>');
 
@@ -69,7 +69,7 @@ function ensureShared() {
     try { mkdirSync(lock); break; } catch {
       if (existsSync(done)) break;
       if (Date.now() - statSync(lock).mtimeMs > 15 * 60_000) { rmSync(lock, { recursive: true, force: true }); continue; }
-      spawnSync('sleep', ['2']);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);
     }
   }
   try {
@@ -84,9 +84,12 @@ function ensureShared() {
   }
 }
 
+// A directory link. On Windows a junction: a symlink there needs Developer Mode or an administrator, a junction doesn't.
+function link(to, at) { symlinkSync(to, at, process.platform === 'win32' ? 'junction' : 'dir'); }
 function realpathOr(p) { try { return realpathSync(p); } catch { return p; } }
 function isLink(p) { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } }
 function run(cmd, args, cwd) {
-  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit' });
+  // npm is npm.cmd on Windows, which only runs through a shell (these arguments are fixed flags, nothing to quote).
+  const r = spawnSync(cmd, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
   if (r.status !== 0) { console.error(`${cmd} ${args.join(' ')} failed (exit ${r.status})`); process.exit(1); }
 }

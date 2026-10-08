@@ -139,11 +139,11 @@ test('the plugin: valid manifests, owner-only skill, and every command it names 
   for (const [, cmd] of text.matchAll(/`mortiflix ([a-z]+)/g)) assert.ok(known.has(cmd), `the skill names "mortiflix ${cmd}", which the CLI doesn't have`);
 });
 
-test('a claude-code session doesn\'t inherit the Claude Code conversation that started the run', async (t) => {
+test('a claude-code session: its own Claude Code, the prompt on stdin, mfx first on its PATH', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'mfx-cc-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const fake = join(dir, 'claude');
-  writeFileSync(fake, `#!/bin/sh\nenv > "${join(dir, 'env.txt')}"\necho '{"type":"result","result":"ok","usage":{"input_tokens":1,"output_tokens":1}}'\n`);
+  writeFileSync(fake, `#!/bin/sh\nenv > "${join(dir, 'env.txt')}"\ncat > "${join(dir, 'prompt.txt')}"\necho "$@" > "${join(dir, 'args.txt')}"\necho '{"type":"result","result":"ok","usage":{"input_tokens":1,"output_tokens":1}}'\n`);
   chmodSync(fake, 0o755);
   const saved = {};
   for (const k of ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_MESSAGING_SOCKET']) { saved[k] = process.env[k]; process.env[k] = 'parent'; }
@@ -154,4 +154,8 @@ test('a claude-code session doesn\'t inherit the Claude Code conversation that s
   const env = readFileSync(join(dir, 'env.txt'), 'utf8');
   for (const k of claudeCode.PARENT_SESSION_VARS) assert.doesNotMatch(env, new RegExp(`^${k}=`, 'm'));
   assert.match(env, /^MFX_TOKEN=t$/m);
+  // The prompt arrives on stdin, never as an argument (cmd.exe can't be trusted to pass it through on Windows).
+  assert.equal(readFileSync(join(dir, 'prompt.txt'), 'utf8'), 'go');
+  assert.doesNotMatch(readFileSync(join(dir, 'args.txt'), 'utf8'), /\bgo\b/);
+  assert.match(env, new RegExp(`^PATH=${join(REPO, 'bin')}:`, 'm'));
 });

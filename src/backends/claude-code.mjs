@@ -6,11 +6,13 @@ import { createInterface } from 'node:readline';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { REPO } from '../studio.mjs';
+import { command, withPath, groupOptions, killTree, findGitBash } from '../platform.mjs';
 
 export const name = 'claude-code';
 
 export function available(config) {
-  const r = spawnSync(config.claudeBin || 'claude', ['--version'], { encoding: 'utf8', timeout: 10_000 });
+  const c = command(config.claudeBin || 'claude', ['--version']);
+  const r = spawnSync(c.file, c.args, { ...c.options, encoding: 'utf8', timeout: 10_000 });
   return r.status === 0 ? { ok: true, detail: r.stdout.trim() } : { ok: false, detail: `${config.claudeBin || 'claude'} not found: install Claude Code (https://claude.com/claude-code) and log in` };
 }
 
@@ -21,27 +23,35 @@ export const PARENT_SESSION_VARS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CLA
   'CLAUDE_CODE_EXECPATH', 'CLAUDE_PID'];
 
 export async function run({ root, workdir, prompt, env, transcript, onActivity, signal, config }) {
-  const args = ['-p', prompt, '--output-format', 'stream-json', '--verbose', ...(config.claudeArgs || [])];
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', ...(config.claudeArgs || [])];
   if (config.model) args.push('--model', config.model);
-  const sessionEnv = {
+  const sessionEnv = withPath({
     ...process.env,
     ...env,
-    PATH: `${join(REPO, 'bin')}:${process.env.PATH}`,
     // A one-shot session ends when its turn ends: anything backgrounded would be killed mid-job.
     CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: '1',
-  };
+  }, join(REPO, 'bin'));
   for (const k of PARENT_SESSION_VARS) delete sessionEnv[k];
+  // Claude Code on Windows runs its shell commands in Git Bash: point it at the one we found, unless it's set.
+  if (process.platform === 'win32' && !sessionEnv.CLAUDE_CODE_GIT_BASH_PATH) {
+    const bash = findGitBash();
+    if (bash) sessionEnv.CLAUDE_CODE_GIT_BASH_PATH = bash;
+  }
   let cmd = config.claudeBin || 'claude';
   let argv = args;
-  if (config.sandbox) {
+  let options = {};
+  if (config.sandbox && process.platform === 'linux') {
     const box = sandboxArgs({ root, workdir, socket: env.MFX_SOCKET, claudeBin: cmd, env: sessionEnv });
     argv = [...box, resolveBin(cmd), ...args];
     cmd = 'bwrap';
-  }
+  } else ({ file: cmd, args: argv, options } = command(cmd, args, { env: sessionEnv }));
 
   const out = createWriteStream(transcript, { flags: 'a' });
-  const p = spawn(cmd, argv, { cwd: workdir, env: sessionEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-  const kill = () => { try { process.kill(-p.pid, 'SIGTERM'); } catch { /* gone */ } };
+  // The prompt goes in on stdin: no quoting to get wrong (claude.cmd on Windows runs through cmd.exe), no length limit.
+  const p = spawn(cmd, argv, { ...options, ...groupOptions(), cwd: workdir, env: sessionEnv, stdio: ['pipe', 'pipe', 'pipe'] });
+  p.stdin.on('error', () => {});
+  p.stdin.end(prompt);
+  const kill = () => killTree(p.pid);
   signal?.addEventListener('abort', kill, { once: true });
 
   let result = null;

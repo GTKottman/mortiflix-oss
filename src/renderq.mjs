@@ -4,6 +4,7 @@
 import { spawn } from 'node:child_process';
 import { createWriteStream, mkdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { command, groupOptions, killTree } from './platform.mjs';
 
 export class RenderQueue {
   constructor({ logDir, onChange = () => {} }) {
@@ -70,10 +71,6 @@ export class RenderQueue {
     job.startedAt = new Date().toISOString();
     const out = createWriteStream(job.log);
     out.write(`$ ${job.argv.join(' ')}\n`);
-    const p = spawn(job.argv[0], job.argv.slice(1), { cwd: job.cwd, env: job.env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
-    job.proc = p;
-    p.stdout.pipe(out, { end: false });
-    p.stderr.pipe(out, { end: false });
     const finish = (code, err) => {
       if (job.state !== 'running') return;
       job.exitCode = code;
@@ -87,6 +84,14 @@ export class RenderQueue {
         this.pump();
       });
     };
+    // npx and npm are .cmd programs on Windows: command() runs those through cmd.exe (and refuses arguments it
+    // can't pass through it safely, which fails the render with the reason).
+    let c;
+    try { c = command(job.argv[0], job.argv.slice(1), { env: job.env }); } catch (e) { finish(127, e); return; }
+    const p = spawn(c.file, c.args, { ...c.options, ...groupOptions(), cwd: job.cwd, env: job.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    job.proc = p;
+    p.stdout.pipe(out, { end: false });
+    p.stderr.pipe(out, { end: false });
     p.on('error', (e) => finish(127, e));
     p.on('close', (code, signal) => finish(code ?? (signal ? 128 : 1)));
     this.onChange(job);
@@ -97,7 +102,7 @@ export class RenderQueue {
     for (const job of this.jobs.values()) {
       if (job.sessionId !== sessionId) continue;
       if (job.state === 'waiting') { job.state = 'failed'; job.exitCode = -1; for (const w of job.waiters.splice(0)) w(); }
-      if (job.state === 'running' && job.proc) { try { process.kill(-job.proc.pid, 'SIGTERM'); } catch { /* already gone */ } }
+      if (job.state === 'running' && job.proc) killTree(job.proc.pid);
     }
     this.pump();
   }

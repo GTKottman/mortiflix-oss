@@ -64,7 +64,10 @@ Every key is yours: Mortiflix has no accounts of its own. You add them with `mor
 `mortiflix init`, and before a project starts if it needs one) or Settings › Keys. Typing is never echoed, and each
 key is checked with a free, read-only API call before it's saved.
 
-- A new studio folder is created mode 700 (only you can open it).
+- A new studio folder is created mode 700 (only you can open it). On Windows, where file modes mean nothing,
+  `secrets.json` and `session.env` get an access list for your account alone (`icacls`). The rest of the studio
+  folder is protected by your user folder's permissions when it's in your user folder (the default,
+  `%USERPROFILE%\Mortiflix`). If you move it elsewhere with `MORTIFLIX_STUDIO`, it has that folder's permissions.
 - The Anthropic API key is stored in `secrets.json` (mode 600) and is never returned by the API or shown in the UI.
   Sessions don't get it.
 - The ElevenLabs key is stored in `secrets.json` too, and given to a session only while ElevenLabs is the narration

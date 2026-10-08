@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync,
 import { join, resolve, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { restrictToOwner } from './platform.mjs';
 
 // A refusal caused by what someone asked for (bad input, wrong state): shown to them, never a crash.
 export class UserError extends Error {}
@@ -108,7 +109,7 @@ export function writeSessionEnv(root, env) {
   const lines = Object.entries(env).map(([k, v]) => `${k}=${v}`);
   const tmp = `${p}.${process.pid}.tmp`;
   writeFileSync(tmp, lines.length ? `${lines.join('\n')}\n` : '', { mode: 0o600 });
-  chmodSync(tmp, 0o600);
+  restrictToOwner(tmp);
   renameSync(tmp, p);
 }
 
@@ -122,7 +123,9 @@ export function writeJson(file, value, mode) {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n', mode ? { mode } : undefined);
-  if (mode) chmodSync(tmp, mode);
+  // Secrets (600): on Windows the mode means nothing, so they get an ACL for you alone instead.
+  if (mode === 0o600) restrictToOwner(tmp);
+  else if (mode) chmodSync(tmp, mode);
   renameSync(tmp, file);
 }
 
