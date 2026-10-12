@@ -73,7 +73,7 @@ A 404, a blocked site, a missing photo, a failed download or a tool error is nev
 
    **Internal steps:** `mfx step done <step> --checks checks/<step>.json` (that file is the `error_checks` list).
 5. **Hand off and stop:** `mfx handoff "what you did, what's next, gotchas"`, update `checklist.md`, then end your
-   turn. Don't wait or poll: the next session starts when the owner responds. If other steps are ready (steps can
+   turn. `mfx handoff` writes the journal entry: don't edit `JOURNAL.md` yourself. Don't wait or poll: the next session starts when the owner responds. If other steps are ready (steps can
    run side by side), carry on with them before you stop.
 
 ## Reading the owner's response
@@ -123,6 +123,7 @@ mfx render-wait 1          # waits up to 100 s; call again until state is done o
 
 Nothing keeps running after you stop. Run every command in the foreground (or through `mfx render`) and wait for it.
 
-1. `mfx handoff "…"`: what was done, what's next, anything the next session must know.
+1. `mfx handoff "…"`: what was done, what's next, anything the next session must know (this is the journal entry;
+   never write `JOURNAL.md` by hand).
 2. Taste you learned about the owner that applies to every future video: `mfx taste "…"`.
 3. End your turn.
