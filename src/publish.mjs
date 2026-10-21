@@ -1,5 +1,5 @@
 // Publishing a delivered video to your social accounts, through the service you picked in setup:
-//   uploadpost  Upload-Post (https://upload-post.com), hosted, paid plans
+//   uploadpost  Upload-Post (https://upload-post.com), hosted, free plan (10 uploads/mo) and paid plans
 // Started by @mutonby (Upload-Post, PR #3). Postiz was removed on 2026-10-21 after the Railway breach (README).
 //
 // Only you publish. It's reachable from the CLI, never from `mfx`, so a session can't post anything; and only a

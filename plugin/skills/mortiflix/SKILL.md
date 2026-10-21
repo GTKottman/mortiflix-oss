@@ -73,8 +73,9 @@ Say what's already there (`tools`), then ask. Use AskUserQuestion for choices. E
   `mortiflix setup install strudel chrome`. Chrome reuses theirs when they have one.
 - **Assets**: only if they use a stock site. `mortiflix setup assets <url> …`, then
   `mortiflix setup install browser-harness`. They sign in to the site in their own Chrome.
-- **Publishing**: optional. `mortiflix setup publish uploadpost [--profile <name>]` (hosted, paid plans, an
-  Upload-Post account) or `mortiflix setup publish none`. The key is theirs to type: `mortiflix keys set uploadpost`.
+- **Publishing**: optional. `mortiflix setup publish uploadpost [--profile <name>]` (hosted, an Upload-Post account,
+  free plan with 10 uploads/mo or paid plans) or `mortiflix setup publish none`. The key is theirs to type:
+  `mortiflix keys set uploadpost`.
   Postiz was removed after the Railway security breach of 2026-10-21: never set it up.
 - **3D**: only if they want it. `mortiflix setup install blender blender-addons`.
 

@@ -851,7 +851,7 @@ async function setupPart(root, id, st) {
   if (id === 'publish') {
     const cur = pub.publishConfig(loadConfig(root));
     console.log(`  Now: ${C.b(cur.service === 'none' ? 'not set up' : `Upload-Post${cur.profile ? ` (profile ${cur.profile})` : ''}`)}`);
-    console.log('  1. Upload-Post: a hosted service with paid plans. You connect your accounts on upload-post.com. Needs its API key.');
+    console.log('  1. Upload-Post: a hosted service with a free plan (10 uploads/mo) and paid plans. You connect your accounts on upload-post.com. Needs its API key.');
     console.log('  2. Don\'t publish from the studio: you download finals and post them yourself.');
     const choice = (await prompterOnce(`  Which? ${C.dim(`[Enter keeps ${cur.service}]`)} `)).trim();
     if (choice === '2') { pub.savePublish(root, { service: 'none' }); return console.log('  Publishing off.'); }

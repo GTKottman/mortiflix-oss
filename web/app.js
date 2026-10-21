@@ -747,7 +747,7 @@ async function setupSection() {
         h('input', { type: 'text', placeholder: 'Upload-Post profile your accounts are under', value: profile, oninput: (e) => { profile = e.target.value; } }),
         h('div', { class: 'actions', style: { marginTop: '8px' } },
           h('button', { class: 'btn', onclick: () => savePublish({ profile }, 'Profile saved') }, 'Save'), keyNote),
-        h('p', { class: 'meta' }, 'Connect your accounts on upload-post.com, under a profile. Paid plans.'));
+        h('p', { class: 'meta' }, 'Connect your accounts on upload-post.com, under a profile. Free plan (10 uploads/mo) or paid plans.'));
     }
     return h('div', null,
       choiceChips(Object.keys(PUBLISH), label, (v) => savePublish({ service: PUBLISH[v] })),
