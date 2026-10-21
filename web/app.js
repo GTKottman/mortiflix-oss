@@ -732,7 +732,7 @@ async function setupSection() {
   };
 
   // Publishing: which service posts a delivered video (`mortiflix publish`), and what it needs.
-  const PUBLISH = { 'Upload-Post': 'uploadpost', 'Postiz (self-hosted)': 'postiz', Off: 'none' };
+  const PUBLISH = { 'Upload-Post': 'uploadpost', Off: 'none' };
   const savePublish = async (body, done) => {
     try { info = await api('/api/setup/publish', { method: 'PUT', body }); draw(); if (done) toast(done); } catch (e) { toast(e.message, true); }
   };
@@ -748,13 +748,6 @@ async function setupSection() {
         h('div', { class: 'actions', style: { marginTop: '8px' } },
           h('button', { class: 'btn', onclick: () => savePublish({ profile }, 'Profile saved') }, 'Save'), keyNote),
         h('p', { class: 'meta' }, 'Connect your accounts on upload-post.com, under a profile. Paid plans.'));
-    } else if (pb.service === 'postiz') {
-      let url = pb.postiz.url;
-      detail = h('div', null,
-        h('input', { type: 'text', inputmode: 'url', placeholder: 'http://localhost:4007/api', value: url, oninput: (e) => { url = e.target.value; } }),
-        h('div', { class: 'actions', style: { marginTop: '8px' } },
-          h('button', { class: 'btn', onclick: () => savePublish({ url }, 'Postiz address saved') }, 'Save'), keyNote),
-        h('p', { class: 'meta' }, 'Your Postiz\'s API address: the official Docker image answers at http://localhost:4007/api, Postiz Cloud at https://api.postiz.com. Install it with Docker Compose (docs.postiz.com › Self-host), then connect your accounts in it. Each platform needs a developer app you register there; TikTok keeps posts private until it has reviewed yours.'));
     }
     return h('div', null,
       choiceChips(Object.keys(PUBLISH), label, (v) => savePublish({ service: PUBLISH[v] })),

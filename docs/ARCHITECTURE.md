@@ -132,15 +132,13 @@ work makes sound. `verifyKey` proves a key with a free, read-only call (`GET /v1
 project that lacks a key for its next steps pauses with `NEEDS_YOU` instead of starting a session) all ask it. Other
 keys for sessions go to `session.env` through `setSessionKey`; only their names are ever shown.
 
-The publishing keys (Upload-Post, Postiz) are the studio's, not a session's: `publish.mjs` reads the chosen service's
-key (`keyValue`) when you run `mortiflix publish`. `config.json` › `publish` holds the choice (`service`: `uploadpost`,
-`postiz` or `none`, the Upload-Post `profile`, the Postiz `url`). `publishPlan` takes a delivered project's approved
-video and checks everything; for Postiz, `postizChannels` looks up the connected channels so the plan names them. The
-CLI shows the plan, asks, and `publish` sends it: Upload-Post as one form with an `Idempotency-Key`; Postiz as an upload
-then one `POST /public/v1/posts` with a post per channel (scheduled times converted to UTC). Each post carries a key
+The publishing key (Upload-Post) is the studio's, not a session's: `publish.mjs` reads it (`keyValue`) when you run
+`mortiflix publish`. `config.json` › `publish` holds the choice (`service`: `uploadpost` or `none`, and the Upload-Post
+`profile`). `publishPlan` takes a delivered project's approved video and checks everything. The CLI shows the plan,
+asks, and `publish` sends it to Upload-Post as one form with an `Idempotency-Key`. Each post carries a key
 (video, service, platforms, time); the studio refuses one it already sent unless `--again`. It records the post in
 `project.json` (`published`) and the log (`PUBLISHED`); `publishStatus` reads it back per platform. Started by @mutonby
-(PR #3, Upload-Post).
+(PR #3, Upload-Post). Postiz was removed on 2026-10-21 after the Railway security breach (see the README).
 
 ## Narration (`src/voice/`)
 

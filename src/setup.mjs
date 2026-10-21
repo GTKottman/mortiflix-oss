@@ -70,7 +70,7 @@ export const PARTS = [
     id: 'publish',
     title: 'Publishing',
     why: 'Once you approve a final, `mortiflix publish` can post it to your social accounts: where the brief said, at a time you pick, after it shows you the plan and you say yes. Sessions can never post.',
-    needs: 'Optional. Upload-Post (hosted, paid plans, your accounts connected on upload-post.com) or Postiz (free and open source, AGPL-3.0, runs on your own server with Docker, your accounts connected in it). Either one\'s API key. Without one, you download finals and post them yourself.',
+    needs: 'Optional. Upload-Post (hosted, paid plans, your accounts connected on upload-post.com) and its API key. Without one, you download finals and post them yourself.',
   },
   {
     id: '3d',
