@@ -10,8 +10,9 @@ Claude makes the video step by step. You approve every stage.</p>
 > sensitive applications like Postiz, the free, open-source publishing service Mortiflix offered. If you set up
 > Postiz, revoke its API key in Postiz and check the social accounts you connected to it.
 >
-> From now on, Mortiflix publishes through **[Upload-Post](https://upload-post.com)** only. It's the paid service:
-> you make an account with them and pick a plan. See [Publishing](#publishing-optional).
+> From now on, Mortiflix publishes through **[Upload-Post](https://upload-post.com)** only. You make an account with
+> them, and it has a **free plan** ($0/mo, 10 uploads a month), so you can start without paying. See
+> [Publishing](#publishing-optional).
 
 <p align="center"><a href="https://youtu.be/53bRoQENmSA"><img src="docs/media/how-to-use-mortiflix.gif" width="720" alt="How to use Mortiflix: tap to watch the video"></a><br>
 <b>▶ <a href="https://youtu.be/53bRoQENmSA">Watch: How to use Mortiflix</a></b> (3:07). This video was made with Mortiflix.</p>
@@ -206,13 +207,23 @@ Everything goes into the studio folder, never system-wide. Full details: [docs/S
 ## Publishing (optional)
 
 Once you approve a final, the video is yours to download. If you'd rather post it straight from the studio, Mortiflix
-publishes through **[Upload-Post](https://upload-post.com)**. It's a hosted service: you make an account there, pick a
-paid plan, and connect your social accounts under a profile. Turn it on in setup (`mortiflix setup publish uploadpost`,
-or Settings › Setup) and add its key with `mortiflix keys set uploadpost`.
+publishes through **[Upload-Post](https://upload-post.com)**. It's a hosted service: you make an account there and
+connect your social accounts under a profile. Turn it on in setup (`mortiflix setup publish uploadpost`, or
+Settings › Setup) and add its key with `mortiflix keys set uploadpost`.
+
+Upload-Post's **free plan** ($0/mo) is enough to start, and paid plans are there if you need more:
+
+- 10 uploads/mo
+- Instagram, LinkedIn, YouTube, Facebook, X, Threads, Pinterest, Bluesky, Google Business + 12 more
+- Schedule posts
+- Analytics
+- 2 profiles
+- Video editor API (FFmpeg): 30 min/mo
+- AI Shorts Uploader: 10 analyses/mo
 
 Mortiflix used to offer two publishing services. The free, open-source one, Postiz, was removed after the Railway
-security breach of October 21, 2026 (see the warning at the top). Upload-Post, the paid one, is the one we're staying
-with.
+security breach of October 21, 2026 (see the warning at the top). Upload-Post, the one that needs an account, is the
+one we're staying with.
 
 Then:
 
