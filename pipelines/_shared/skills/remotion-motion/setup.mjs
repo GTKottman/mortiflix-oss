@@ -19,7 +19,7 @@ const npm = process.env.MFX_NPM || 'npm';
 
 if (!existsSync(join(target, 'src'))) {
   mkdirSync(target, { recursive: true });
-  for (const f of ['src', 'package.json', 'tsconfig.json']) cpSync(join(template, f), join(target, f), { recursive: true });
+  for (const f of ['src', 'package.json', 'tsconfig.json', 'remotion.config.ts']) cpSync(join(template, f), join(target, f), { recursive: true });
   console.log(`${target}: started from the template`);
 } else console.log(`${target}: already set up (src/ kept)`);
 
