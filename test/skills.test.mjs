@@ -5,8 +5,9 @@ import { mkdtempSync, rmSync, writeFileSync, readFileSync, chmodSync, existsSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
-const SETUP = new URL('../pipelines/_shared/skills/remotion-motion/setup.mjs', import.meta.url).pathname;
+const SETUP = fileURLToPath(new URL('../pipelines/_shared/skills/remotion-motion/setup.mjs', import.meta.url));
 
 test('remotion setup installs once per studio and links every project', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'mfx-setup-'));
@@ -36,7 +37,7 @@ test('qc.mjs: a designed end hold passes with --end-hold; a freeze mid-video nev
   if (spawnSync('ffmpeg', ['-version']).status !== 0) return t.skip('no ffmpeg');
   const dir = mkdtempSync(join(tmpdir(), 'mfx-qc-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const QC = new URL('../pipelines/_shared/skills/final-pass/qc.mjs', import.meta.url).pathname;
+  const QC = fileURLToPath(new URL('../pipelines/_shared/skills/final-pass/qc.mjs', import.meta.url));
   const clip = (name, parts) => {
     const inputs = parts.flatMap((p) => ['-f', 'lavfi', '-i', `${p}=size=320x180:rate=30:duration=2`]);
     const r = spawnSync('ffmpeg', ['-loglevel', 'error', '-y', ...inputs, '-filter_complex', `${parts.map((_, i) => `[${i}]`).join('')}concat=n=${parts.length}:v=1:a=0`, '-pix_fmt', 'yuv420p', join(dir, name)]);
