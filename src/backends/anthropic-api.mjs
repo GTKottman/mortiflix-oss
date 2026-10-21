@@ -284,7 +284,9 @@ export function confine(work, path, creating = false) {
   let probe = abs;
   if (creating) while (!existsSync(probe)) probe = dirname(probe);
   const real = existsSync(probe) ? realpathSync(probe) : probe;
-  if (!isInside(work, real) || !isInside(work, abs)) throw new Error(`${path} is outside the project folder`);
+  // The project folder itself may sit behind a symlink (macOS keeps os.tmpdir() under /var -> /private/var), so compare real with real.
+  const base = existsSync(work) ? realpathSync(work) : work;
+  if (!isInside(base, real) || !isInside(work, abs)) throw new Error(`${path} is outside the project folder`);
   return abs;
 }
 
