@@ -129,8 +129,15 @@ Decide in this order: the motif and hook (melody craft) → tempo, meter and sca
   material, rests. The music opens up in the gaps between lines and after the last word.
 - **The chart** is built from the scale's own chords; borrowed colours where they serve the story. Vary the harmony
   across sections, and slow the harmonic rhythm to suspend time, speed it up to drive.
-- **Roles**: 3 to 10, each on **its own MIDI channel** 1–16 (drums on 10), with a vivid name, a job in the story, and
-  an `instrument_idea` (the instruments stage chooses the real sound).
+- **Roles**: a full song or MIDI pack is a full arrangement: **at least 6 parts, most land at 7-10** (up to 14), each on
+  **its own MIDI channel** 1–16 (drums on 10), with a vivid name, a job in the story, and an `instrument_idea` (the
+  instruments stage chooses the real sound). Start from the genre's lineup, then add what the story needs: a
+  counter-line, a texture, a second percussion layer, a doubled hook, a drone. Parts enter and leave by section, so
+  6+ parts doesn't mean everything plays at once. A video's score, or a piece whose brief fixed it small, can be
+  leaner. `plan` holds a full song to 6.
+- **Every piece sounds like itself.** `music/recent.json` lists the owner's last pieces (key, tempo, meter, parts,
+  opening progression). Vary tempo, mode, meter, form and the lineup from them. `plan` refuses a blueprint with the
+  same key, tempo and opening progression as one of them, and warns when two of the three match.
 - **Songs**: the `genre_signature` names which of the genre's unforgettable elements carry the hook and the beat; the
   length comes from the genre's `length` unless the brief fixed it (then `"length_fixed": true`).
 
@@ -171,7 +178,8 @@ the curve against the story: does it rise where it should, does it hold back und
 
 When it passes, the score's notes become **the MIDI**: `music/notes.json` (every channel's notes in beats, with
 velocity) and `out/music/midi/` (one `.mid` per channel, the whole arrangement in one file, tempo, meter, section names
-and hit points as markers, and `CUE-SHEET.md`). From here on the MIDI is the music: the instruments are chosen from it,
+and hit points as markers, a clip per section in `sections/` from its own bar 1, and `CUE-SHEET.md` with the steps to
+bring it into the owner's DAW, `$MFX_DAW`, or general steps when none is named). From here on the MIDI is the music: the instruments are chosen from it,
 and the owner can take it into any DAW. The check also prints where each channel plays (lowest, middle, highest note).
 
 ## 7. Instruments: a sound for every channel
@@ -225,6 +233,10 @@ mix. Fix and audition again until it passes.
   `instruments.json` (levels, pans, filters), then master again.
 - **A video's stand-in**: `node $M render [--stems]` writes `out/music/score.wav` with the instruments, for the
   review against the picture.
+- **Long pieces** render in sections by themselves (about 90 s each, `--section-sec` to change it), one after another,
+  each with a few bars of ring-out added into the next, stitched sample-exact; a line per section shows progress. Run it
+  through `mfx render` and wait with `mfx render-wait`; never split the score by hand, and stop a render only with
+  `mfx render-stop <id>`.
 
 You can't hear the render. Look at it: `ffmpeg -i out/music/master.wav -lavfi showspectrumpic=s=1600x400
 music/spectrum.png` (each section's density and register should be visible where the blueprint put them). Say in the
@@ -232,13 +244,21 @@ note that these are measurements, not listening.
 
 ### Mixing a video's music under the voice
 
-The music starts at `offset_sec`. Duck it under the speech and finish at the delivery loudness:
+The music starts at `offset_sec`. Duck it under the speech, then bring the mix to the delivery loudness in two
+passes. One pass (loudnorm with no measured values) always rides the level up and down and changes the mix; two passes
+turn it up by one fixed amount when the peaks allow it:
 
 ```
 ffmpeg -i voice/voice.wav -i <the music> -filter_complex \
  "[0:a]asplit=2[v1][v2];[1:a]adelay=600|600,volume=-4dB[m];[m][v1]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=450[duck];\
-  [v2][duck]amix=inputs=2:normalize=0[mix];[mix]loudnorm=I=-14:TP=-1.5:LRA=11" -ar 48000 audio/mix.wav
+  [v2][duck]amix=inputs=2:normalize=0" -ar 48000 -c:a pcm_f32le audio/mix-pre.wav
+ffmpeg -i audio/mix-pre.wav -af loudnorm=I=-14:TP=-1.5:LRA=11:print_format=json -f null -     # read the measured values
+ffmpeg -i audio/mix-pre.wav -af loudnorm=I=-14:TP=-1.5:LRA=11:measured_I=..:measured_TP=..:measured_LRA=..:measured_thresh=..:offset=..:linear=true:print_format=json \
+ -ar 48000 -c:a pcm_s24le audio/mix.wav
 ```
+
+If the second pass prints `"normalization_type" : "dynamic"`, the level was ridden: the mix's peaks are too hot for the
+gain it needs. Lower the music (or the loudest voice peaks) in the first command and do both passes again.
 
 (`adelay` is `offset_sec` in milliseconds; `<the music>` is the owner's master when there is one, otherwise
 `out/music/score.wav`.) Music sits about 18 dB under the voice while it speaks and comes up in the gaps. Sound effects

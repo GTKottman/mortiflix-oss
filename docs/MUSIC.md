@@ -31,7 +31,7 @@ flowchart LR
 | **Genre** (songs) | the session, from 5+ sources it read | every field, a hook and a beat element, concrete "how"s | `music/genre.json`, `GENRE.md` |
 | **Blueprint** | the session | sections contiguous with a function and an intensity (0–10), the chord chart, one MIDI channel per part, the genre signature, the length | `music/blueprint.json`, `BLUEPRINT.md` |
 | **Score** | the session, in Strudel | every note against the chord of the moment (the harmony lock), each section's measured busyness against its asked intensity, hit points within a frame of the picture, nothing past the end, every part playing | `music/check.json` |
-| **MIDI** | captured from the score | (it's captured only once the score passes) | `music/notes.json`, `out/music/midi/` (one file per channel, the arrangement, `CUE-SHEET.md`), `midi.zip` |
+| **MIDI** | captured from the score | (it's captured only once the score passes) | `music/notes.json`, `out/music/midi/` (one file per channel, the arrangement, a clip per section in `sections/`, `CUE-SHEET.md`), `midi.zip` |
 | **Instruments** | the session, from each channel's real range | every channel covered, two parts in one register never share a timbre, at most one lo-fi sound, low end and top covered, every drum number has a sound | `music/instruments.json` |
 | **Audition** | the engine | each instrument plays its part's lowest, middle and highest note: none silent, none clipping | `out/music/audition/*.wav` |
 | **Master** | the engine | no stem silent or clipping alone; the balance (low end, mud, stereo width); -14 LUFS, true peak ≤ -1 dBTP | `out/music/master.wav`, `.mp3`, `stems/` |
@@ -78,7 +78,7 @@ picture, the score, and the check (hits within a frame). It chooses stand-in ins
 against the picture.
 
 Then, by default, **you finish it**: the project page's **Music** panel has the MIDI pack (every channel on its own
-track, tempo, sections and hit points as markers, the cue sheet). Give every channel its sound in your DAW, mix,
+track, tempo, sections and hit points as markers, a clip per section, the cue sheet with your DAW's import steps). Give every channel its sound in your DAW, mix,
 export from bar 1 to the end, and **Import your master**. The studio checks it fits the score (length, and that it
 starts with bar 1 so the hits stay on the picture), resumes, and mixes your master under the narration. From a
 terminal:

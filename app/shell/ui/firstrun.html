@@ -1,0 +1,64 @@
+<!doctype html><meta charset="utf-8"><title>Mortiflix Studio</title>
+<!-- First run on Windows (main.rs firstrun_query): what's missing, the official command for each, nothing installed
+     without the person pressing a button (Claude Code and Git open a visible PowerShell window running the command). -->
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #0e0e10; color: #cfcfd4; font: 15px system-ui, sans-serif; }
+  main { width: 40rem; }
+  h1 { font-size: 22px; color: #fff; margin: 0 0 .4rem; }
+  .lead { color: #8a8a93; margin: 0 0 1.4rem; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: .4rem 1rem; padding: 1rem 0; border-top: 1px solid #26262c; }
+  .row b { color: #fff; }
+  .ok { color: #6fcf8f; }
+  .miss { color: #f0b46a; }
+  .why { color: #8a8a93; font-size: 13px; grid-column: 1 / -1; }
+  code { display: block; grid-column: 1 / -1; background: #17171b; border: 1px solid #26262c; padding: .5rem .7rem; border-radius: 6px; color: #e6e6ea; font: 13px ui-monospace, Consolas, monospace; user-select: all; }
+  button { padding: .5rem 1rem; font: inherit; border: 1px solid #3a3a42; background: #1b1b20; color: #fff; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+  button:disabled { opacity: .5; cursor: default; }
+  .primary { background: linear-gradient(135deg, #7c5cff, #c04bd8); border: 0; }
+  .end { display: flex; gap: .6rem; justify-content: flex-end; padding-top: 1.2rem; border-top: 1px solid #26262c; }
+</style>
+<main>
+  <h1>Before your first video</h1>
+  <p class="lead">Mortiflix Studio uses a few programs it can't ship itself. Install what's missing, then press Check again.
+    You can also continue now and add them later in Settings.</p>
+
+  <div class="row" id="claude">
+    <div><b>Claude Code</b> <span class="state"></span></div>
+    <div class="act"></div>
+    <div class="why">The AI that writes and builds your videos, with your own Claude login. Official install command:</div>
+    <code>irm https://claude.ai/install.ps1 | iex</code>
+  </div>
+
+  <div class="row" id="git">
+    <div><b>Git for Windows</b> <span class="state"></span></div>
+    <div class="act"></div>
+    <div class="why">Claude Code runs its commands in Git Bash on Windows, and the studio's renders use it too. Install command:</div>
+    <code>winget install --id Git.Git -e --source winget</code>
+  </div>
+
+  <div class="end">
+    <button id="again">Check again</button>
+    <button id="go" class="primary">Continue to Mortiflix</button>
+  </div>
+</main>
+<script>
+const q = new URLSearchParams(location.search);
+const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
+const btn = (text, fn) => { const b = document.createElement('button'); b.textContent = text; b.onclick = fn; return b; };
+function row(id, have, actions) {
+  const r = document.getElementById(id);
+  r.querySelector('.state').textContent = have ? 'installed' : 'not found';
+  r.querySelector('.state').className = 'state ' + (have ? 'ok' : 'miss');
+  const a = r.querySelector('.act');
+  for (const b of actions) a.append(b);
+}
+const ps = (what) => invoke('run_in_powershell', { what }).catch((e) => alert(String(e)));
+row('claude', q.get('claude') === '1', q.get('claude') === '1'
+  ? [btn('Log in', () => ps('claude-login'))]
+  : [btn('Open PowerShell and install', () => ps('claude'))]);
+row('git', q.get('git') === '1', q.get('git') === '1' ? [] : [btn('Open PowerShell and install', () => ps('git'))]);
+
+
+document.getElementById('again').onclick = () => invoke('retry');
+document.getElementById('go').onclick = () => invoke('open_studio');
+</script>

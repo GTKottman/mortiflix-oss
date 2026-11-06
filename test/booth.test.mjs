@@ -86,6 +86,29 @@ test('booth: the script as the reader sees it, takes, checks and keeping', (t) =
   assert.throws(() => booth.addTake(root, id, 'b01-2', tone(0.05)), /fifth of a second/);
 });
 
+test('booth: takes are collected under the name of who recorded them, with their words', (t) => {
+  const { root, id } = projectWithScript(t);
+  assert.deepEqual(booth.speakers(root), []);
+  const a = booth.addTake(root, id, 'b01-1', tone(1.5), { speaker: 'Ana  María' });
+  assert.equal(a.speaker, 'Ana María');
+  booth.keepTake(root, id, 'b01-1', a.take_no);
+  const dir = join(booth.voicesDir(root), 'Ana María');
+  assert.ok(existsSync(join(dir, `${id}-b01-1.wav`)));
+  assert.equal(readFileSync(join(dir, `${id}-b01-1.txt`), 'utf8'), 'Every city has a heartbeat.\n');
+  const clip = JSON.parse(readFileSync(join(projectPaths(root, id).work, 'voice', 'clips', 'b01-1.json'), 'utf8'));
+  assert.equal(clip.voice, 'Ana María');
+  // a name can't climb out of voices/
+  const b = booth.addTake(root, id, 'b01-2', tone(1.2), { speaker: '../../Bob' });
+  booth.keepTake(root, id, 'b01-2', b.take_no);
+  assert.ok(existsSync(join(booth.voicesDir(root), 'Bob', `${id}-b01-2.wav`)));
+  assert.deepEqual(booth.speakers(root).sort(), ['Ana María', 'Bob']);
+  assert.throws(() => booth.addTake(root, id, 'b01-1', tone(1), { speaker: '///' }), /who is recording/);
+  // no name (Import from the line, the terminal booth): kept as before, collected nowhere
+  const c = booth.addTake(root, id, 'b01-1', tone(1.4));
+  booth.keepTake(root, id, 'b01-1', c.take_no);
+  assert.equal(c.speaker, undefined);
+});
+
 test('booth: importing files recorded elsewhere keeps one take per line', (t) => {
   const { root, id } = projectWithScript(t);
   const dir = join(tmpdir(), `mfx-import-${randomBytes(3).toString('hex')}`);

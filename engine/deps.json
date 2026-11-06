@@ -1,0 +1,5 @@
+{
+  "note": "The sound engine's pinned dependencies (doc 16 §9). The build fetches these commits; they are never copied into the repo.",
+  "tracktion_engine": { "url": "https://github.com/Tracktion/tracktion_engine.git", "commit": "38d5a2750367d8a95a58da6d3bbab49823285f24", "version": "3.5.0", "licence": "GPL-3.0-or-later" },
+  "juce": { "url": "https://github.com/juce-framework/JUCE.git", "commit": "37c894f83d379179b2070d437ccd0f1cd9af9576", "via": "tracktion_engine's modules/juce submodule", "licence": "AGPL-3.0" }
+}

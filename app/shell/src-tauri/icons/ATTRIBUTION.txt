@@ -1,0 +1,8 @@
+asset:        com.mortiflix.studio.png
+title:        Mortiflix Studio app icon, Linux hicolor theme 128 px
+author:       Gerrod Kottman (Mortiflix owner), for Mortiflix Studio
+source:       original work: the Mortiflix logo mark (3D render, brand/mortiflix/logo-3d/mortiflix-mark-dark.png in GTKottman/mortiflix)
+license:      MIT OR Apache-2.0
+license-file: assets/app-icon/LICENSE.txt
+added:        2026-10-18 by Claude (agent) for Gerrod Kottman
+notes:        Made from the mark render by packaging/icon_from_mark.py (rounded 512-unit tile, rx 112; macOS files on Apple's 824/1024 grid). The Mortiflix name and logo are the owner's brand: the licence covers this file, not the brand.

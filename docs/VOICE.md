@@ -1,15 +1,18 @@
 # Narration, sound effects and music
 
-Mortiflix can narrate your videos four ways. Pick one in **Settings › Narration** (web) or with `mortiflix voice`.
+Mortiflix can narrate your videos three ways. Pick one in **Settings › Narration** (web) or with `mortiflix voice`.
+ElevenLabs is the default and the only voice the studio generates: there is no local voice (Qwen3-TTS and ComfyUI were
+removed on 2026-11-01). Without an ElevenLabs key, Settings and the Voice stage say so plainly; nothing falls back to a
+local model.
 
-| | ElevenLabs | This computer (Qwen3-TTS) | Your own voice | No narration |
-|---|---|---|---|---|
-| Sound | the most natural voices; 90+ languages on Eleven v4 | very good; 10 languages | you | on-screen text and music carry it |
-| Cost | per character, on your ElevenLabs plan | free (your electricity) | free (your time) | free |
-| Privacy | text goes to ElevenLabs | nothing leaves your machine | nothing leaves your machine | nothing to send |
-| Needs | an API key from elevenlabs.io | an NVIDIA GPU with 4 GB+ (8 GB+ for the 1.7B voice), ComfyUI, the TTS Audio Suite | a microphone (and ffmpeg for the terminal booth) | nothing |
-| Voices | thousands (yours, the defaults, the Voice Library, your own clones) | 9 built into the model | yours | |
-| Also | sound effects and music beds | | | |
+| | ElevenLabs | Your own voice | No narration |
+|---|---|---|---|
+| Sound | the most natural voices; 90+ languages on Eleven v4 | you | on-screen text and music carry it |
+| Cost | per character, on your ElevenLabs plan | free (your time) | free |
+| Privacy | text goes to ElevenLabs | nothing leaves your machine | nothing to send |
+| Needs | an API key from elevenlabs.io | a microphone (and ffmpeg for the terminal booth) | nothing |
+| Voices | thousands (yours, the defaults, the Voice Library, your own clones) | yours | |
+| Also | sound effects and music beds | | |
 
 Generated lines are checked by speech to text after they're made: a take with missing or extra words is made again,
 and the timings of every word go to the animation. Your own recordings are timed line by line.
@@ -78,43 +81,6 @@ emphasis; ellipses for pauses; and IPA between slashes for names (`"/ˈkoʊmæl/
 - **Voice clones:** only of your own voice, or with the speaker's clear consent.
 - Your key stays in the studio folder (`secrets.json`, readable only by you). Sessions get it only while ElevenLabs
   is the narration engine.
-
-## This computer: Qwen3-TTS through ComfyUI
-
-[Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice) is an open model (Apache-2.0). Mortiflix
-runs it through [ComfyUI](https://www.comfy.org/) and the [TTS Audio Suite](https://github.com/diodiogod/TTS-Audio-Suite)
-custom nodes, on your graphics card. Settings checks your GPU and only recommends it when it fits:
-
-| Your GPU memory | What you get |
-|---|---|
-| 8 GB or more | **CustomVoice 1.7B**: preset voices plus a delivery instruction ("a calm, warm narrator, unhurried") |
-| 4–8 GB | **CustomVoice 0.6B**: preset voices, no instruction |
-| less | not offered |
-
-Measured on an RTX 3080 (10 GB): the 1.7B voice needs about 6.5 GB free while it speaks, and the listening check
-(Qwen3-ASR 1.7B) about 6 GB. They take turns: Mortiflix speaks every line, frees the GPU, then listens to every
-line. It only asks ComfyUI to free memory when nothing else is queued there, so your other ComfyUI work is never
-interrupted.
-
-### Setting it up
-
-1. Install ComfyUI ([comfy.org/download](https://www.comfy.org/download)) and start it (`http://127.0.0.1:8188`).
-2. In ComfyUI Manager, install **TTS Audio Suite** (or clone it into `custom_nodes/` and run its `install.py`).
-3. Restart ComfyUI, then **Settings › Narration › This computer › Check** (or `mortiflix voice local`).
-   The models download from Hugging Face on first use (about 4 GB for 1.7B).
-
-### The options
-
-- **Voice:** Ryan, Aiden (English); Vivian, Serena, Uncle_Fu, Dylan, Eric (Chinese, two with regional dialects);
-  Ono_Anna (Japanese); Sohee (Korean). Each can speak all 10 languages; that's its native one. They're built into the
-  model, so there's no cloning and no consent question.
-- **Language:** English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian.
-- **Delivery** (1.7B only): the instruction, in plain words. Inline tags aren't read.
-- **Runtime:** the suite's own setting. Try Main Environment first; if ComfyUI reports a transformers version
-  error, its Shared Runtime isolates the model.
-- **Checks:** listen back to every line with Qwen3-ASR (retakes and word timings).
-
-The options shown come from the nodes you have installed, so a newer suite with other models or voices still works.
 
 ## No narration
 

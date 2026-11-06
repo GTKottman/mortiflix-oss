@@ -50,7 +50,6 @@ missing.
 - **uv** and **browser-harness** install to `%USERPROFILE%\.local\bin`, as on Linux.
 - **Blender**: yours is reused from `C:\Program Files\Blender Foundation`; otherwise the official Windows zip is
   unpacked into the studio. **Nova FX doesn't build on Windows yet** (the other toolkits install).
-- **Local narration** (ComfyUI + Qwen3-TTS) installs the same way, with PyTorch for CUDA; its window stays hidden.
 
 ## Removing it
 
@@ -83,7 +82,7 @@ Found by reading the code for Linux-only assumptions. Checked items are done on 
 - [ ] Stopping a session kills its process group (`process.kill(-pid)`: claude-code backend, the API backend's
       shell, the render queue); Windows needs `taskkill /T /F /PID`
 - [ ] The API backend's shell is `bash`; on Windows, Git Bash from `findGitBash()`
-- [ ] The Remotion template links `node_modules` with a directory symlink (needs Developer Mode or admin on
+- [ ] The video template (Kinetograph) links `node_modules` with a directory symlink (needs Developer Mode or admin on
       Windows); use a junction. It also runs `sleep`, which Windows doesn't have
 - [ ] `secrets.json` relies on file mode 600, which Windows ignores; the user profile's permissions protect it.
       Say so in SECURITY.md, or set an ACL

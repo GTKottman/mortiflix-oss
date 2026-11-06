@@ -1,0 +1,280 @@
+{
+  "slug": "v3",
+  "name": "Mortiflix v3 video",
+  "description": "The v3 video: brief, script, voice (with ElevenLabs music), look, motion (one scene at a time), sound, then the Artcraft final. One pipeline, no separate transitions or build steps.",
+  "makes": "video",
+  "shared_skills": [
+    "motion-design",
+    "remotion-motion",
+    "voiceover",
+    "final-pass"
+  ],
+  "intake": [
+    {
+      "id": "topic",
+      "label": "What's the video about?",
+      "type": "long",
+      "required": true,
+      "help": "The idea, product or process, who it's for, and the one thing a viewer should remember."
+    },
+    {
+      "id": "source_url",
+      "label": "Article link (optional)",
+      "type": "text",
+      "help": "A link to the article or page the video is about. Stored as given; fetching it is a separate step."
+    },
+    {
+      "id": "audience",
+      "label": "Who's watching?",
+      "type": "text"
+    },
+    {
+      "id": "length",
+      "label": "Length",
+      "type": "choice",
+      "choices": [
+        "15 s",
+        "30 s",
+        "45 s",
+        "60 s",
+        "90 s",
+        "120 s",
+        "180 s",
+        "300 s",
+        "480 s",
+        "600 s",
+        "900 s",
+        "1200 s"
+      ]
+    },
+    {
+      "id": "aspect",
+      "label": "Shape",
+      "type": "choice",
+      "choices": [
+        "16:9",
+        "9:16",
+        "1:1"
+      ],
+      "default": "16:9"
+    },
+    {
+      "id": "voice",
+      "label": "Voice",
+      "type": "choice",
+      "choices": [
+        "Pick in the script step",
+        "Narrated",
+        "On-screen text and music only"
+      ],
+      "default": "Pick in the script step",
+      "help": "The voice is picked in the script step (ElevenLabs account voices). Narration and music both come from the voice step."
+    },
+    {
+      "id": "script",
+      "label": "Your own script",
+      "type": "long",
+      "help": "If you have one, it's spoken word for word."
+    },
+    {
+      "id": "brand",
+      "label": "Logo, fonts, colours, references",
+      "type": "files"
+    }
+  ],
+  "steps": [
+    {
+      "key": "brief",
+      "name": "Brief",
+      "review": "questions",
+      "describe": "Restate the brief in plain words and ask the questions that change the video, each with a default.",
+      "stage": "script"
+    },
+    {
+      "key": "script",
+      "name": "Script",
+      "review": "document",
+      "work": [
+        "script"
+      ],
+      "after": [
+        "brief"
+      ],
+      "canvas": "beat",
+      "stage": "script"
+    },
+    {
+      "key": "voice",
+      "name": "Voice",
+      "review": "audio",
+      "when": "voice",
+      "work": [
+        "audio",
+        "music"
+      ],
+      "after": [
+        "script"
+      ],
+      "describe": "The approved script read aloud with the chosen ElevenLabs voice, one line per sentence with word timings, plus the music (ElevenLabs), all in this step. The owner checks each scene before anything is drawn.",
+      "canvas": "line",
+      "stage": "voiceMusic"
+    },
+    {
+      "key": "style-frames",
+      "name": "Style frames",
+      "review": "frames",
+      "work": [
+        "stills"
+      ],
+      "after": [
+        "voice"
+      ],
+      "describe": "Finished-quality style frames that fix the look, made after the script and voice are approved, in Kinetograph straight from your style pack and asset packs. They come in rounds of 3, one frame per part of the script (a long part holds its frame longer); you check off each frame, and what you said on a frame goes into the frames after it. This is the Look.",
+      "canvas": "frame",
+      "stage": "look"
+    },
+    {
+      "key": "animatic",
+      "name": "Motion",
+      "review": "video",
+      "work": [
+        "motion",
+        "audio"
+      ],
+      "after": [
+        "style-frames"
+      ],
+      "describe": "Scenes are made one at a time: you check a scene, your notes become lessons (mistakes never to repeat), and only when you OK it is the next scene made. Never a batch unless you ask for one, and then you are warned first. Every beat timed to the approved narration. Cuts are decided here (no separate transition board).",
+      "canvas": "shot",
+      "stage": "motion"
+    },
+    {
+      "key": "sound",
+      "name": "Sound",
+      "stage": "sound",
+      "review": "audio",
+      "work": [
+        "audio"
+      ],
+      "after": [
+        "animatic"
+      ],
+      "describe": "Sound effects planned from the motion: library sounds first, new ones only when you confirm the credits. Nothing paid is made without your OK."
+    },
+    {
+      "key": "artcraft",
+      "name": "Artcraft final",
+      "review": "video",
+      "work": [
+        "motion",
+        "audio"
+      ],
+      "after": [
+        "sound"
+      ],
+      "delivers": true,
+      "describe": "The final made in ArtCraft (a .mortiflix project from the approved shots, voice, music and sounds, with its checks run). It is the delivering step, so it always runs. ArtCraft is not launched for you.",
+      "stage": "artcraft"
+    }
+  ],
+  "status_lines": {
+    "brief": "Reading your brief",
+    "research": "Researching the topic",
+    "script": "Writing the script",
+    "frames": "Designing the look",
+    "voice": "Recording the narration",
+    "animatic": "Timing every beat",
+    "build": "Animating the final",
+    "qc": "Watching every frame before you do",
+    "deliver": "Packaging your video",
+    "transitions": "Designing every cut"
+  },
+  "checks": [
+    {
+      "id": "spelling-and-facts",
+      "title": "Every word, name and number is right",
+      "applies_to": [
+        "script",
+        "stills",
+        "motion"
+      ],
+      "how": "Read every on-screen word and every script line against the brief and your sources. Names, numbers, units and spelling exactly right; nothing claimed that the brief or a source doesn't support."
+    },
+    {
+      "id": "script-fits-length",
+      "title": "The script fits the length",
+      "applies_to": [
+        "script"
+      ],
+      "how": "Spoken words at about 150 per minute (count them) land within 10% of the target length, with room for the holds."
+    },
+    {
+      "id": "text-safe-area",
+      "title": "Text sits inside the title-safe area",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "In every still and in sampled frames, every text box sits at least 5% inside each frame edge; nothing is cut off or touching an edge."
+    },
+    {
+      "id": "no-collisions",
+      "title": "Nothing collides by accident",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "No text overlaps other text or a busy shape unless it's designed to; nothing is clipped by the frame or another layer."
+    },
+    {
+      "id": "text-contrast",
+      "title": "Text is readable",
+      "applies_to": [
+        "stills",
+        "motion"
+      ],
+      "how": "Body text has at least 4.5:1 contrast with what's behind it at its worst frame; every text block stays on screen long enough to read twice (about words / 3 + 1 seconds)."
+    },
+    {
+      "id": "frame-sheet",
+      "title": "Every second looked at",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "Run the final-pass skill's qc.mjs: no black, flash or frozen frames (unless designed), and look at its contact sheet (a frame per second) yourself. Every sampled frame makes visual sense."
+    },
+    {
+      "id": "format",
+      "title": "The right size, rate and length",
+      "applies_to": [
+        "motion"
+      ],
+      "how": "ffprobe (qc.mjs) shows the brief's shape at 1080p or more, a constant frame rate, H.264 + AAC, and a duration within 5% of the target."
+    },
+    {
+      "id": "loudness",
+      "title": "Loudness and no clipping",
+      "applies_to": [
+        "audio"
+      ],
+      "how": "qc.mjs: integrated loudness -14 LUFS (±1) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
+    },
+    {
+      "id": "sync",
+      "title": "Picture and sound in sync",
+      "applies_to": [
+        "audio"
+      ],
+      "how": "Each spoken key word lands with its visual within 2 frames (check against the word timings); music hits land on cuts they were meant for."
+    },
+    {
+      "id": "flat-2d-buildable",
+      "title": "Buildable in Kinetograph, from the asset pool",
+      "applies_to": [
+        "stills"
+      ],
+      "how": "Every frame is drawn by code in Kinetograph, and every texture, picture, icon, font, 3D still and document picture in it comes from the project's asset pool (a pack the owner added, or the small default texture pack), drawn as it is, by id. Texture and depth from pool files are allowed (owner, 2026-11-01). Nothing realistic is invented by code: an id that is not in the pool, or a file that is missing, fails the frame."
+    }
+  ],
+  "stage_set": "v3"
+}

@@ -14,15 +14,16 @@ test('terminal notes point at items, spots, moments and paragraphs', () => {
   assert.deepEqual(parseNote('3¶2: reword'), { item: 3, paragraph: 2, text: 'reword' });
 });
 
-test('renders run one at a time, in order, and report their output', async (t) => {
+test('with one slot (renders.parallel 1), renders run one at a time, in order, and report their output', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'mfx-rq-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const q = new RenderQueue({ logDir: dir });
+  const q = new RenderQueue({ logDir: dir, parallel: 1 });
   const a = q.add({ projectId: 'p', sessionId: 's', label: 'a', argv: ['sh', '-c', 'sleep 0.3; echo first'], cwd: dir, env: process.env });
   const b = q.add({ projectId: 'p', sessionId: 's', label: 'b', argv: ['sh', '-c', 'echo second; exit 3'], cwd: dir, env: process.env });
   assert.equal(a.state, 'running');
   assert.equal(b.state, 'waiting');
-  assert.equal(b.renders_ahead, 1);
+  assert.equal(b.renders_ahead, 0, 'nothing waits before it');
+  assert.equal(b.renders_running, 1);
   const ra = await q.wait(a.id, 'p', 5);
   assert.equal(ra.state, 'done');
   assert.match(ra.output_tail, /first/);

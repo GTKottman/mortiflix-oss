@@ -3,3 +3,37 @@ node_modules/
 .DS_Store
 __pycache__/
 *.pyc
+
+# AI working notes: never in the public repo. Skills and PIPELINE.md stay: the app runs on them.
+node_modules
+CLAUDE.md
+CLAUDE.local.md
+AGENTS*.md
+GEMINI.md
+CONTRACT.md
+JOURNAL.md
+HANDOFF*.md
+.claude/
+.cursor/
+/review/
+/app/review/
+*-BRIEF.md
+*UX-MASTER-PROMPT*.md
+RUN-BUGS.md
+SWEEP-REQUESTS.md
+CHECK-STATUS.md
+FINAL-UX.md
+REVIEW-*.md
+COMPONENTS.md
+
+# Personal: keys, studio data, licensed packs, test fixtures from real projects
+.env
+.env.*
+secrets.json
+TASTE.md
+*.fixture.json
+app/web/app/
+app/shell/bundle-res/
+app/shell/dist*/
+app/shell/src-tauri/gen/
+app/shell/src-tauri/target/

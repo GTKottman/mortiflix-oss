@@ -50,7 +50,7 @@ if (cmd === 'list') {
       const up = '../'.repeat(depth + 1);
       writeFileSync(file, readFileSync(file, 'utf8').replace(/(['"])(?:\.\.\/)+src\/core(\/[^'"]*)?\1/g, (_, q, rest = '') => `${q}${up}core${rest}${q}`));
     }
-    console.log(`✔ ${id} → ${to}${t.requires.length ? ` (needs ${t.requires.join(', ')}: render with --gl=angle, or --gl=swangle without a GPU)` : ''}`);
+    console.log(`✔ ${id} → ${to}${t.requires.length ? ` (needs ${t.requires.join(', ')}: kinetograph draws it, no --gl flag)` : ''}`);
   }
   console.log(`  core → ${join(dest, 'core')}. Use: <TransitionSeries.Transition presentation={toPresentation(t, params)} timing={linearTiming({ durationInFrames })} />`);
 } else if (cmd === 'posters') {

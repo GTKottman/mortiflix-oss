@@ -1,0 +1,65 @@
+{
+ "title": "Four",
+ "bpm": 96,
+ "meter": "4/4",
+ "bars": 8,
+ "scale": "D:dorian",
+ "offset_sec": 0.5,
+ "sections": [
+  {
+   "id": "m01",
+   "name": "Cold open",
+   "start_bar": 1,
+   "end_bar": 4,
+   "function": "sets the room up quietly",
+   "intensity": 3
+  },
+  {
+   "id": "m02",
+   "name": "The bet",
+   "start_bar": 5,
+   "end_bar": 8,
+   "function": "the same groove, now it matters",
+   "intensity": 6
+  }
+ ],
+ "roles": [
+  {
+   "channel": 2,
+   "name": "Bass",
+   "harmony": "bass"
+  },
+  {
+   "channel": 3,
+   "name": "Keys",
+   "harmony": "chords"
+  },
+  {
+   "channel": 10,
+   "name": "Drums",
+   "harmony": "drums"
+  }
+ ],
+ "hits": [
+  {
+   "what": "logo",
+   "t_sec": 10.5,
+   "bar": 5,
+   "beat": 1
+  }
+ ],
+ "chart": [
+  {
+   "bars": [
+    1,
+    8
+   ],
+   "chords": [
+    "Dm7",
+    "Am7",
+    "Gm7",
+    "Dm7"
+   ]
+  }
+ ]
+}

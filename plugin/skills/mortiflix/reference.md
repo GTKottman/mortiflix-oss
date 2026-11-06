@@ -21,7 +21,10 @@
 | `mortiflix reopen <id> <step> "what to change"` | send an approved step back |
 | `mortiflix pause \| resume \| cancel <id>` | |
 | `mortiflix checks` · `checks approve \| reject <check-id>` | checks that sessions proposed |
-| `mortiflix setup install <tool>…` | transitions, strudel, chrome, browser-harness, blender, blender-addons, comfyui |
+| `mortiflix setup install <tool>…` | transitions, strudel, chrome, browser-harness, blender, blender-addons, craft |
+| `mortiflix craft` · `craft --json` | the Craft apps: which are installed, versions, what each is for |
+| `mortiflix craft install [all \| <app>…]` · `craft remove <app>` | pull (checked against SHA256SUMS) or delete Craft apps |
+| `mortiflix craft register` · `craft mcp-config` | add their MCP servers to the owner's Claude Code (ask first) · print them as JSON |
 | `mortiflix setup music strudel [--midi \| --no-midi]` · `setup music none` | |
 | `mortiflix setup assets <url>…` · `setup assets --clear` | |
 | `mortiflix voice none \| own` | narration choices that need no terminal |

@@ -96,6 +96,17 @@ test('setup: asset sites are web addresses without logins; music choices persist
   assert.equal(JSON.parse(env.MFX_ASSETS).sites.length, 2);
 });
 
+test('setup: the owner\'s DAW persists, reaches sessions as MFX_DAW, and an unknown one is refused', (t) => {
+  const root = tempStudio(t);
+  assert.deepEqual(setup.dawConfig({}), { id: null, name: null });
+  assert.deepEqual(setup.saveDaw(root, 'reaper'), { id: 'reaper', name: 'REAPER' });
+  assert.equal(setup.sessionToolsEnv(root).MFX_DAW, 'reaper');
+  assert.equal(setup.setupStatusSync(root).daw.name, 'REAPER');
+  assert.throws(() => setup.saveDaw(root, 'vcv'), /which DAW/);
+  assert.deepEqual(setup.saveDaw(root, 'none'), { id: null, name: null });
+  assert.equal(setup.sessionToolsEnv(root).MFX_DAW, undefined);
+});
+
 test('pipelines: "when" is checked, and a skipped music step never lets later work jump ahead', (t) => {
   assert.match(validatePipeline({ slug: 'x', name: 'X', steps: [{ key: 'a', review: 'video', when: 'rain' }] }).join('\n'), /"when" must be one of music/);
   const root = tempStudio(t);

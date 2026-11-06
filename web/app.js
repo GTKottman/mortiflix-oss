@@ -1,6 +1,12 @@
 // Mortiflix studio (web). No framework: a tiny DOM builder, hash routes, and live updates over SSE.
 // Everything the studio or a session wrote is inserted as text, never as HTML.
 
+import { canvasView } from './canvas.js';
+import { midiStrudelView } from './midistrudel.js';
+import { songLane } from './songlane.js';
+import { createTransport, engineSource, audioSource } from './transport.js';
+import { pianoRoll } from './pianoroll.js';
+
 const $app = document.getElementById('app');
 const $status = document.getElementById('top-status');
 let studio = null;
@@ -61,8 +67,8 @@ const store = {
   del(k) { try { localStorage.removeItem(k); } catch { /* private mode */ } },
 };
 const BACKEND_NAMES = { 'claude-code': 'Claude Code', 'anthropic-api': 'Claude API', demo: 'Demo' };
-const ICONS = { approved: ['✓', 'done'], done: ['✓', 'done'], skipped: ['–', ''], in_review: ['●', 'review'], changes: ['↺', 'changes'], working: ['…', ''], ready: ['○', ''], blocked: ['·', ''] };
-const STATE_WORDS = { approved: 'approved', done: 'done', skipped: 'skipped', in_review: 'waiting for you', changes: 'changes asked', working: 'in progress', ready: 'up next', blocked: 'later' };
+const ICONS = { approved: ['✓', 'done'], done: ['✓', 'done'], skipped: ['–', ''], in_review: ['●', 'review'], changes: ['↺', 'changes'], editing: ['✎', 'review'], working: ['…', ''], ready: ['○', ''], blocked: ['·', ''] };
+const STATE_WORDS = { approved: 'approved', done: 'done', skipped: 'skipped', in_review: 'waiting for you', changes: 'changes asked', editing: 'editing in Mortiflix Studio', working: 'in progress', ready: 'up next', blocked: 'later' };
 const icon = (state) => { const [g, c] = ICONS[state] || ['·', '']; return h('span', { class: `ico ${c}`, 'aria-hidden': 'true' }, g); };
 
 // ---------- routing ----------
@@ -73,6 +79,8 @@ const routes = [
   [/^p\/([a-z0-9-]+)$/, projectView, 'studio'],
   [/^p\/([a-z0-9-]+)\/review\/([a-z0-9_-]+)(?:\/(\d+))?$/, reviewView, 'studio'],
   [/^p\/([a-z0-9-]+)\/booth$/, boothView, 'studio'],
+  [/^p\/([a-z0-9-]+)\/canvas(?:\/(import|export))?(?:\?(.*))?$/, openCanvas, 'studio'],
+  [/^midi-strudel$/, openMidiStrudel, 'midi'],
   [/^pipelines$/, pipelinesView, 'pipelines'],
   [/^settings$/, settingsView, 'settings'],
 ];
@@ -82,6 +90,13 @@ async function render() {
   const hit = routes.find(([re]) => re.test(path));
   const [re, view, nav] = hit || routes[0];
   for (const a of document.querySelectorAll('[data-nav]')) a.classList.toggle('on', a.dataset.nav === nav);
+  // Inside the same project's canvas, only the level changed (doc 25 §2.4): route there, never rebuild (the video plays on).
+  const args = path.match(re)?.slice(1) || [];
+  if (view === openCanvas && current?.canvas && current.args[0] === args[0] && current.args[1] === args[1]) {
+    current.args = args;
+    return current.canvas.route(args[2] || '');
+  }
+  window.scrollTo(0, 0);
   if (leaveView) { try { leaveView(); } catch { /* already closed */ } leaveView = null; }
   current = { name: view.name, refresh: null, args: path.match(re)?.slice(1) || [] };
   // The review room is wider; the header widens with it so both keep one left edge.
@@ -107,13 +122,23 @@ function mount(...kids) {
   fill($app, ...kids);
 }
 
-window.addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
+window.addEventListener('hashchange', () => render());
 
 // ---------- live updates ----------
 
 let refreshTimer = null;
+// Live events the views listen to (the sound engine's clock and state).
+const serverListeners = new Map();
+function onServerEvent(type, fn) {
+  if (!serverListeners.has(type)) serverListeners.set(type, new Set());
+  serverListeners.get(type).add(fn);
+  return () => serverListeners.get(type)?.delete(fn);
+}
 function connect() {
   const es = new EventSource('/api/events');
+  for (const type of ['daw-clock', 'daw-state']) {
+    es.addEventListener(type, (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } for (const fn of serverListeners.get(type) || []) fn(m); });
+  }
   es.addEventListener('change', () => {
     clearTimeout(refreshTimer);
     refreshTimer = setTimeout(async () => {
@@ -139,6 +164,24 @@ async function loadStudio() {
     working ? h('span', null, `Working on ${working.title}`) : null,
     h('span', { class: 'chip' }, BACKEND_NAMES[studio.config.backend] || studio.config.backend),
   );
+}
+
+// ---------- the canvas (web/canvas.js) ----------
+
+async function openCanvas(id, mode, query) {
+  const cv = canvasView({ h, fill, api, fileUrl, clock, store, icon, appendLog, toast, customChips, musicPanel, songLane, createTransport, engineSource, audioSource, onServerEvent, pianoRoll, studio: () => studio }, id, mode || 'edit');
+  mount(await cv.show(query || ''));
+  current.canvas = cv;
+  current.refresh = () => cv.refresh();
+  leaveView = () => cv.leave();
+}
+
+// ---------- MIDI ⇄ Strudel (web/midistrudel.js) ----------
+
+function openMidiStrudel() {
+  const v = midiStrudelView({ h, api, store });
+  mount(v.show());
+  leaveView = () => v.leave();
 }
 
 // ---------- the studio (home) ----------
@@ -176,7 +219,7 @@ async function studioView() {
   const section = (title, list, row) => (list.length ? h('section', null, h('h2', null, title, h('span', { class: 'count' }, list.length)), h('ul', { class: 'rows' }, list.map(row))) : null);
 
   mount(
-    h('div', { class: 'head' }, h('h1', null, 'Studio'), h('div', { class: 'actions' }, h('a', { class: 'btn solid', href: '#/new' }, 'New video'))),
+    h('div', { class: 'head' }, h('h1', null, 'Studio'), h('div', { class: 'actions' }, h('a', { class: 'btn solid', href: '#/new' }, 'New project'))),
     projects.length ? null : h('section', null, h('div', { class: 'empty' },
       h('div', { class: 'big' }, 'Nothing in production yet.'),
       h('p', null, 'Pick what to make, write the brief, and approve each stage as it comes in.'),
@@ -283,7 +326,7 @@ async function projectView(id) {
   const steps = h('section', null, h('h2', null, 'Steps', h('span', { class: 'count' }, `${d.steps.filter((s) => ['approved', 'done', 'skipped'].includes(s.state)).length}/${d.steps.length}`)),
     h('ul', { class: 'rows' }, d.steps.map((s) => h('li', { class: 'row' }, icon(s.state),
       h('div', { class: 'main' }, h('span', { class: 'title' }, s.name),
-        h('div', { class: 'meta' }, s.review === 'internal' ? 'made in the studio' : `you review ${s.review === 'frames' ? 'the frames' : s.review === 'questions' ? 'questions' : `the ${s.review}`}`,
+        h('div', { class: 'meta' }, s.skip_reason || (s.review === 'internal' ? 'made in the studio' : `you review ${s.review === 'frames' ? 'the frames' : s.review === 'questions' ? 'questions' : `the ${s.review}`}`),
           subsByStep(s.key).length ? ' · ' : '', subsByStep(s.key).map((x, i) => [i ? ' ' : '', h('a', { href: `#/p/${id}/review/${s.key}/${x.version}` }, `v${x.version}`)]))),
       h('div', { class: 'end' }, s.state === 'in_review' ? h('a', { href: `#/p/${id}/review/${s.key}` }, 'Review') : h('span', null, STATE_WORDS[s.state]))))));
 
@@ -304,6 +347,7 @@ async function projectView(id) {
   const journal = d.journal ? h('section', null, h('details', { 'data-key': 'journal' }, h('summary', null, 'Studio journal'), h('pre', { class: 'journal' }, d.journal))) : null;
 
   const actions = h('div', { class: 'actions' },
+    h('a', { class: 'btn', href: `#/p/${id}/canvas` }, 'Open the canvas'),
     ['queued', 'waiting'].includes(p.state) ? h('button', { class: 'btn', onclick: act('pause', 'Paused') }, 'Pause') : null,
     !['delivered', 'cancelled'].includes(p.state) ? h('button', { class: 'btn link danger', onclick: async () => { if (confirmInline(actions, 'Cancel this project?')) await act('cancel', 'Cancelled')(); } }, 'Cancel') : null);
 
@@ -341,7 +385,7 @@ function appendLog(log, a, scroll = true) {
 function questionForm(id, q) {
   let value = '';
   const input = q.choices
-    ? choiceChips(q.choices, null, (v) => { value = v; })
+    ? customChips(q.choices, null, (v) => { value = v; })
     : h('input', { type: 'text', placeholder: q.default ? `Default: ${q.default}` : 'Your answer', oninput: (e) => { value = e.target.value; } });
   const send = async (useDefault) => {
     try {
@@ -364,6 +408,20 @@ function choiceChips(choices, selected, onPick) {
     } }, c);
     add(wrap, b);
   }
+  return wrap;
+}
+
+// Choices plus "Custom": the owner can always type their own value instead (a length of 75 s, a 4:5 shape…).
+function customChips(choices, selected, onPick, placeholder = 'Your own') {
+  const own = selected && !choices.includes(selected) ? selected : '';
+  const input = h('input', { type: 'text', class: 'custom-in', placeholder, value: own, oninput: (e) => onPick(e.target.value) });
+  const wrap = h('div', { class: 'custom-choice' });
+  const chips = choiceChips([...choices, 'Custom'], own ? 'Custom' : selected, (v) => {
+    input.hidden = v !== 'Custom';
+    if (v === 'Custom') { onPick(input.value); input.focus(); } else onPick(v);
+  });
+  input.hidden = !own;
+  add(wrap, chips, input);
   return wrap;
 }
 
@@ -535,46 +593,53 @@ async function reviewView(id, stepKey, versionParam) {
 
 // ---------- new video ----------
 
+// New project, like Premiere's: a small window with a name, a preset (the pipeline: it sets the project's mood) and
+// the idea. The preset's other settings start at their defaults, folded away. Create makes the project, starts it and
+// opens its canvas.
 async function newView(slug) {
   const pipelines = (await api('/api/pipelines')).filter((p) => !p.error);
-  if (!slug) {
-    mount(h('div', { class: 'head' }, h('h1', null, 'New video')),
-      h('section', null, h('h2', null, 'What are we making?'), pipelines.map((p) => h('div', { class: 'pick', onclick: () => { location.hash = `#/new/${p.slug}`; } },
-        h('a', { class: 'title', href: `#/new/${p.slug}` }, p.name), h('span', { class: 'chip' }, p.makes),
-        h('div', { class: 'desc' }, p.description),
-        h('div', { class: 'chain' }, p.steps.filter((s) => s.review !== 'internal').map((s) => s.name).join(' → '))))));
-    return;
-  }
-  const p = pipelines.find((x) => x.slug === slug);
-  if (!p) throw new Error(`no pipeline ${slug}`);
-  const answers = {};
-  const files = {};
-  for (const q of p.intake) if (q.type === 'choice' && q.default) answers[q.id] = q.default;
-  let title = '';
+  const draftKey = 'mfx-new-project';
+  const draft = store.get(draftKey) || {};
+  let p = pipelines.find((x) => x.slug === (slug || draft.slug)) || pipelines.find((x) => x.slug === 'explainer') || pipelines[0];
+  let title = draft.title || '';
+  let answers = {};
+  let files = {};
   let backend = null;
   let createdId = null;
   const err = h('div', { class: 'err' });
   const keysBox = h('div');
+  const win = h('div', { class: 'np-win', role: 'dialog', 'aria-label': 'New project' });
+  let updateSum = () => {};
+  const save = () => store.set(draftKey, { slug: p.slug, title, idea: answers[ideaOf(p)?.id] || '' });
+  // "The idea" is the preset's first required long answer; other required answers sit beside it.
+  const ideaOf = (pl) => pl.intake.find((q) => q.required && q.type === 'long') || pl.intake.find((q) => q.type === 'long');
+  const reset = () => {
+    answers = {}; files = {};
+    for (const q of p.intake) if (q.default && q.type !== 'files') answers[q.id] = q.default;
+    const idea = ideaOf(p);
+    if (idea && draft.idea && draft.slug === p.slug) answers[idea.id] = draft.idea;
+  };
+  const control = (q) => {
+    if (q.type === 'long') return h('textarea', { rows: 3, value: answers[q.id] || '', oninput: (e) => { answers[q.id] = e.target.value; save(); } });
+    if (q.type === 'choice') return q.custom === false ? choiceChips(q.choices, answers[q.id] || q.default || null, (v) => { answers[q.id] = v; updateSum(); })
+      : customChips(q.choices, answers[q.id] || q.default || null, (v) => { answers[q.id] = v; updateSum(); }, q.id === 'length' ? 'e.g. 75 s' : 'Your own');
+    if (q.type === 'files') return h('input', { type: 'file', multiple: true, onchange: (e) => { files[q.id] = [...e.target.files]; } });
+    return h('input', { type: 'text', value: answers[q.id] || '', oninput: (e) => { answers[q.id] = e.target.value; } });
+  };
+  const row = (label, ctl, help) => h('div', { class: 'np-row' }, h('label', null, label), h('div', null, ctl, help ? h('div', { class: 'help' }, help) : null));
 
-  const field = (label, control, { help, optional } = {}) => h('div', { class: 'field' }, h('label', null, label, optional ? h('div', { class: 'opt' }, 'optional') : null), h('div', null, control, help ? h('div', { class: 'help' }, help) : null));
-  const fields = p.intake.map((q) => {
-    let control;
-    if (q.type === 'long') control = h('textarea', { oninput: (e) => { answers[q.id] = e.target.value; } });
-    else if (q.type === 'choice') control = choiceChips(q.choices, q.default || null, (v) => { answers[q.id] = v; });
-    else if (q.type === 'files') control = h('input', { type: 'file', multiple: true, onchange: (e) => { files[q.id] = [...e.target.files]; } });
-    else control = h('input', { type: 'text', oninput: (e) => { answers[q.id] = e.target.value; } });
-    return field(q.label || q.id, control, { help: q.help, optional: !q.required });
-  });
-
-  const startBtn = h('button', { class: 'btn solid', onclick: async () => {
+  const createBtn = h('button', { class: 'btn primary', onclick: async () => {
     err.textContent = '';
-    startBtn.disabled = true;
+    if (!title.trim()) { err.textContent = 'Give it a name.'; return; }
+    const missing = p.intake.filter((q) => q.required && (q.type === 'files' ? !(files[q.id] || []).length : !String(answers[q.id] || '').trim()));
+    if (missing.length) { err.textContent = `${missing.map((q) => q.label || q.id).join(', ')}: needed for this preset.`; return; }
+    createBtn.disabled = true;
     try {
       if (!createdId) {
-        const { id } = await api('/api/projects', { method: 'POST', body: { pipeline: slug, title, answers, backend } });
+        const { id } = await api('/api/projects', { method: 'POST', body: { pipeline: p.slug, title, answers, backend } });
         for (const [fieldId, list] of Object.entries(files)) {
           for (const f of list) {
-            startBtn.textContent = `Uploading ${f.name}…`;
+            createBtn.textContent = `Uploading ${f.name}…`;
             await api(`/api/projects/${id}/files?field=${encodeURIComponent(fieldId)}&name=${encodeURIComponent(f.name)}`, { method: 'POST', raw: f });
           }
         }
@@ -584,33 +649,87 @@ async function newView(slug) {
       try {
         await api(`/api/projects/${id}/start`, { method: 'POST' });
       } catch (e) {
-        // Keys this project needs: ask for them right here, then Start again.
+        // Keys this project needs: ask for them right here, then Create again.
         if (!e.data?.needs_keys) { location.hash = `#/p/${id}`; throw e; }
         const { keys } = await api('/api/keys');
-        const drawKeys = (list) => fill(keysBox, h('section', null, h('h2', null, 'Before it starts'), h('p', { class: 'meta' }, e.message),
+        const drawKeys = (list) => fill(keysBox, h('div', { class: 'np-keys' }, h('p', { class: 'meta' }, e.message),
           list.filter((k) => e.data.needs_keys.includes(k.id)).map((k) => keyRow(k, (r) => drawKeys(r.keys)))));
         drawKeys(keys);
-        throw new Error('Add the key above, then Start.');
+        throw new Error('Add the key above, then Create.');
       }
-      location.hash = `#/p/${id}`;
+      store.del(draftKey);
+      location.hash = `#/p/${id}/canvas`;
     } catch (e) {
       err.textContent = e.message;
-      startBtn.disabled = false;
-      startBtn.textContent = 'Start';
+      createBtn.disabled = false;
+      createBtn.textContent = 'Create';
     }
-  } }, 'Start');
+  } }, 'Create');
 
-  mount(
-    h('a', { class: 'crumb', href: '#/new' }, '← Everything we make'),
-    h('div', { class: 'head' }, h('div', null, h('h1', null, p.name), h('div', { class: 'sub' }, p.description))),
-    h('section', null,
-      field('Title', h('input', { type: 'text', placeholder: p.name, oninput: (e) => { title = e.target.value; } })),
-      fields,
+  // The pencil by Preset: change the preset's name, description and default answers, and save it as your own.
+  let editing = false;
+  function presetEditor() {
+    const defs = Object.fromEntries(p.intake.filter((q) => q.type !== 'files').map((q) => [q.id, q.default || '']));
+    let name = p.source === 'studio' ? p.name : `My ${p.name.toLowerCase()}`;
+    let description = p.description;
+    const msg = h('div', { class: 'err' });
+    const ctl = (q) => (q.type === 'choice' ? customChips(q.choices, defs[q.id] || null, (v) => { defs[q.id] = v; })
+      : q.type === 'long' ? h('textarea', { rows: 2, value: defs[q.id], oninput: (e) => { defs[q.id] = e.target.value; } })
+        : h('input', { type: 'text', value: defs[q.id], oninput: (e) => { defs[q.id] = e.target.value; } }));
+    const saveBtn = h('button', { class: 'btn primary', onclick: async () => {
+      msg.textContent = '';
+      try {
+        const r = await api(`/api/pipelines/${p.slug}/preset`, { method: 'POST', body: { name, description, defaults: defs, replace: p.source === 'studio' && name === p.name } });
+        const fresh = (await api('/api/pipelines')).filter((x) => !x.error);
+        pipelines.splice(0, pipelines.length, ...fresh);
+        p = pipelines.find((x) => x.slug === r.slug);
+        editing = false; reset(); save(); draw(); toast(`Saved your preset "${r.name}"`);
+      } catch (e) { msg.textContent = e.message; }
+    } }, 'Save as my preset');
+    return h('div', { class: 'np-edit' },
+      h('div', { class: 'np-edit-head' }, `Change the preset: ${p.name}`),
+      row('Name', h('input', { type: 'text', value: name, oninput: (e) => { name = e.target.value; } })),
+      row('Description', h('textarea', { rows: 2, value: description, oninput: (e) => { description = e.target.value; } })),
+      h('div', { class: 'help np-edit-note' }, 'Default answers: every new project with this preset starts with these.'),
+      p.intake.filter((q) => q.type !== 'files').map((q) => row(q.label || q.id, ctl(q))),
+      h('div', { class: 'np-edit-foot' }, msg, h('button', { class: 'btn', onclick: () => { editing = false; draw(); } }, 'Cancel'), saveBtn));
+  }
+
+  function draw() {
+    if (!p) return fill(win, h('div', { class: 'np-head' }, 'New project'), h('p', { class: 'err' }, 'No presets found in pipelines/. Run mortiflix setup.'));
+    const idea = ideaOf(p);
+    const main = p.intake.filter((q) => q.required && q !== idea);
+    const rest = p.intake.filter((q) => !q.required && q !== idea);
+    const sumText = () => rest.filter((q) => q.type === 'choice').map((q) => answers[q.id]).filter(Boolean).map((v) => String(v).split(': ')[0]).join(' · ');
+    const sumEl = h('span', { class: 'np-sum' }, sumText());
+    updateSum = () => { sumEl.textContent = sumText(); };
+    const open = store.get('mfx-new-settings-open') ?? false;
+    const settings = h('details', { class: 'np-settings', open, ontoggle: (e) => store.set('mfx-new-settings-open', e.target.open) },
+      h('summary', null, 'Preset settings', sumEl),
+      rest.map((q) => row(q.label || q.id, control(q), q.help)),
       studio?.config.backend === 'demo' ? null
-        : field('Made by', choiceChips([BACKEND_NAMES[studio?.config.backend] || 'Studio default', 'Demo (placeholder work, free)'], BACKEND_NAMES[studio?.config.backend] || 'Studio default', (v) => { backend = v.startsWith('Demo') ? 'demo' : null; }), { help: 'The demo walks every stage with placeholder work: handy to learn the review room.' })),
-    keysBox,
-    h('div', { class: 'form-end' }, err, startBtn),
-  );
+        : row('Made by', choiceChips([BACKEND_NAMES[studio?.config.backend] || 'Studio default', 'Demo (placeholder work, free)'], backend === 'demo' ? 'Demo (placeholder work, free)' : BACKEND_NAMES[studio?.config.backend] || 'Studio default', (v) => { backend = v.startsWith('Demo') ? 'demo' : null; }),
+          'The demo walks every stage with placeholder work: handy to learn the canvas.'));
+    fill(win,
+      h('div', { class: 'np-head' }, h('span', null, 'New project'), h('a', { class: 'np-x', href: '#/', 'aria-label': 'Close' }, '×')),
+      h('div', { class: 'np-body' },
+        row('Name', h('input', { type: 'text', value: title, placeholder: 'Give it a name', oninput: (e) => { title = e.target.value; save(); } })),
+        row('Preset', h('div', { class: 'np-preset' }, h('select', { onchange: (e) => { p = pipelines.find((x) => x.slug === e.target.value); editing = false; reset(); save(); draw(); } },
+          pipelines.map((x) => h('option', { value: x.slug, selected: x.slug === p.slug }, x.name))),
+          h('button', { class: 'btn np-pencil', title: 'Change this preset', 'aria-label': 'Change this preset', onclick: () => { editing = !editing; draw(); } }, '✎')),
+        h('div', null, h('div', { class: 'help' }, p.description), h('div', { class: 'help np-chain' }, p.steps.filter((x) => x.review !== 'internal').map((x) => x.name).join(' · ')))),
+        editing ? presetEditor() : null,
+        idea ? row('The idea', control(idea), idea.help) : null,
+        main.map((q) => row(q.label || q.id, control(q), q.help)),
+        settings,
+        keysBox),
+      h('div', { class: 'np-foot' }, err, h('a', { class: 'btn', href: '#/' }, 'Cancel'), createBtn));
+  }
+
+  reset();
+  mount(h('div', { class: 'np-wrap' }, win));
+  draw();
+  win.querySelector('input[type=text]')?.focus();
 }
 
 // ---------- pipelines ----------
@@ -702,9 +821,24 @@ async function setupSection() {
   const field = (label, control, help) => h('div', { class: 'field' }, h('label', null, label), h('div', null, control, help ? h('div', { class: 'help' }, help) : null));
   const chip = (ok, yes, no, neutral = false) => h('span', { class: `chip ${ok ? 'ok' : neutral ? '' : 'bad'}` }, ok ? yes : no);
   const refresh = async () => { info = await api('/api/setup'); draw(); };
+  // The studio browser: a Chromium of its own that sessions drive (never your personal Chrome, never Claude in Chrome).
+  // Its start command is set from the terminal only (mortiflix setup browser --start "…"): it's a command the studio runs.
+  const browserSetup = () => {
+    const b = info.browser || {};
+    let addr = b.cdpUrl || '';
+    const status = h('span', { class: 'meta' });
+    const check = async () => { status.textContent = 'Checking…'; const r = await api('/api/setup/browser/check'); status.textContent = `${r.ok ? '✔' : '✖'} ${r.detail}${!r.ok && r.canStart ? ' (it is started before each session)' : ''}`; };
+    return h('div', { class: 'tool-row' },
+      h('div', null, h('b', null, 'Studio browser'), ' ', h('span', { class: 'meta' }, 'its own Chromium, on this computer: every session drives it with browser-harness in its own tab, never your personal Chrome or Claude in Chrome.')),
+      h('div', { class: 'actions', style: { marginTop: '8px' } },
+        h('input', { type: 'text', placeholder: 'http://127.0.0.1:9333', value: addr, style: { maxWidth: '260px' }, oninput: (e) => { addr = e.target.value; } }),
+        h('button', { class: 'btn', onclick: async () => { try { info = await api('/api/setup/browser', { method: 'PUT', body: { cdpUrl: addr.trim() || null } }); draw(); toast('Studio browser saved'); } catch (e) { toast(e.message, true); } } }, 'Save'),
+        h('button', { class: 'btn', onclick: check }, 'Check'), status),
+      h('p', { class: 'meta' }, b.start ? `Started when needed with: ${b.start}` : 'To have the studio start it when it isn\'t running: mortiflix setup browser <address> --start "<command>"'));
+  };
 
   // One tool: its status, what installing it means, an Install button and the live log while it runs.
-  const UPDATABLE = ['transitions', 'strudel', 'browser-harness', 'blender-addons'];   // the others are reused when found
+  const UPDATABLE = ['transitions', 'strudel', 'browser-harness', 'blender-addons', 'craft'];   // the others are reused when found
   const toolRow = (id, label = info.tools[id].name) => {
     const st = info.status[id];
     const t = info.tools[id];
@@ -755,6 +889,25 @@ async function setupSection() {
       pb.service === 'none' ? null : h('p', { class: 'meta' }, 'Post a delivered video from a terminal: mortiflix publish <project>. It shows the plan and asks first.'));
   };
 
+  // The Craft apps: tick the ones to have, Install pulls them; installed ones open here or get removed.
+  const craftSetup = () => {
+    const apps = info.status.craft.apps;
+    const save = async (ids) => { try { info = await api('/api/setup/craft', { method: 'PUT', body: { apps: ids } }); draw(); } catch (e) { toast(e.message, true); } };
+    const chosen = () => apps.filter((a) => a.chosen).map((a) => a.id);
+    const act = async (id, what) => {
+      try { const r = await api(`/api/setup/craft/${id}/${what}`, { method: 'POST' }); if (what === 'open') toast(`Opening ${r.path.split(/[\\/]/).pop()}`); else { info = r; draw(); } } catch (e) { toast(e.message, true); }
+    };
+    return h('div', null,
+      h('ul', { class: 'checks-list' }, apps.map((a) => h('li', null,
+        h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: a.chosen, onchange: (e) => save(e.target.checked ? [...chosen(), a.id] : chosen().filter((x) => x !== a.id)) }),
+          h('span', null, h('b', null, a.name), h('span', { class: 'meta' }, ` · ${a.replaces} · ${a.use}${a.installed ? ` · ${a.version}` : ''}`))),
+        a.installed ? h('span', { class: 'actions' },
+          h('button', { class: 'btn link', onclick: () => act(a.id, 'open') }, 'Open'),
+          h('button', { class: 'btn link', onclick: () => act(a.id, 'remove') }, 'Remove')) : null))),
+      toolRow('craft'),
+      h('p', { class: 'meta' }, 'Sessions get the installed apps\' MCP servers and a skill for them. To use them in your own Claude Code too: mortiflix craft register. The ArtCraft name is its team\'s trademark; these are their open-source apps, pulled from their own releases.'));
+  };
+
   function draw() {
     const st = info.status;
     const part = (id) => info.parts.find((x) => x.id === id);
@@ -766,8 +919,6 @@ async function setupSection() {
       field(part('claude').title, h('div', null, ...intro('claude'), h('p', { class: 'meta' }, 'Choose below, in "Who makes the videos".'))),
       field(part('transitions').title, h('div', null, ...intro('transitions'), toolRow('transitions'))),
       field(part('narration').title, h('div', null, ...intro('narration'),
-        h('p', { class: 'meta' }, `This computer: ${st.gpu.reason}`),
-        st.gpu.fits ? toolRow('comfyui') : null,
         h('p', { class: 'meta' }, 'Pick the voice below, in "Narration".'))),
       field(part('music').title, h('div', null, ...intro('music'),
         choiceChips(['Original score', 'No music'], st.music.engine === 'none' ? 'No music' : 'Original score', async (v) => { info = await api('/api/setup/music', { method: 'PUT', body: { engine: v === 'No music' ? 'none' : 'strudel' } }); draw(); }),
@@ -775,6 +926,14 @@ async function setupSection() {
           h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: st.music.midi, onchange: async (e) => { info = await api('/api/setup/music', { method: 'PUT', body: { midi: e.target.checked } }); draw(); } }),
             'Also deliver a MIDI pack (every part, the stems and a cue sheet) to remake the music in your own DAW'),
           toolRow('strudel'), toolRow('chrome')))),
+      field(part('daw').title, h('div', null, ...intro('daw'), (() => {
+        const dawNames = { ...info.daws, none: 'None' };
+        return choiceChips(Object.values(dawNames), st.daw.name || 'None', async (v) => {
+          const daw = Object.keys(dawNames).find((k) => dawNames[k] === v);
+          try { info = await api('/api/setup/daw', { method: 'PUT', body: { daw: daw === 'none' ? null : daw } }); draw(); } catch (e) { toast(e.message, true); }
+        });
+      })())),
+      field(part('daw-engine').title, h('div', null, ...intro('daw-engine'), toolRow('daw-engine'))),
       field(part('assets').title, h('div', null, ...intro('assets'),
         h('p', null, 'If you have a website you use for assets, list it here, one per line. Without one, you won\'t get stock assets: sessions make every visual themselves.'),
         h('textarea', { rows: 3, placeholder: 'https://…', value: sites, oninput: (e) => { sites = e.target.value; } }),
@@ -784,7 +943,8 @@ async function setupSection() {
         st.assets.sites.length ? h('div', null, toolRow('browser-harness'),
           st['browser-harness'].ok && info.recordings ? h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: /enabled/i.test(info.recordings) && !/disabled/i.test(info.recordings), onchange: async (e) => { info = await api('/api/setup/recordings', { method: 'PUT', body: { enable: e.target.checked } }); draw(); } }),
             'Keep local browser recordings (screenshots and traces of what sessions do, on this machine only)') : null,
-          h('p', { class: 'meta' }, 'Sessions use your own Chrome: sign in to these sites there. The first time, Chrome may ask you to allow remote debugging (chrome://inspect/#remote-debugging).')) : null)),
+          h('p', { class: 'meta' }, 'Sessions use your own Chrome: sign in to these sites there. The first time, Chrome may ask you to allow remote debugging (chrome://inspect/#remote-debugging).')) : null,
+        browserSetup())),
       field(part('publish').title, h('div', null, ...intro('publish'), publishSetup())),
       field(part('3d').title, h('div', null, ...intro('3d'),
         toolRow('blender'),
@@ -792,6 +952,7 @@ async function setupSection() {
         st.blender.ok ? h('ul', { class: 'checks-list' }, info.addons.map((a) => h('li', null, h('span', null, h('b', null, a.name), h('span', { class: 'meta' }, ` · ${a.about}`))))) : null,
         st['blender-addons'].installed?.length ? h('div', { class: 'actions' }, h('button', { class: 'btn', onclick: async () => { try { await api('/api/setup/blender', { method: 'POST' }); toast('Opening Blender'); } catch (e) { toast(e.message, true); } } }, 'Open the studio\'s Blender'),
           h('span', { class: 'meta' }, 'Camera Flight: 3D Viewport › N › Flight')) : null)),
+      field(part('craft').title, h('div', null, ...intro('craft'), craftSetup())),
     );
   }
   draw();
@@ -857,7 +1018,6 @@ async function keysSection() {
 
 const ENGINE_LABELS = {
   elevenlabs: ['ElevenLabs', 'The most natural voices, 90+ languages, your own voice clones. Paid per character (their free plan is non-commercial).'],
-  qwen: ['This computer (Qwen3-TTS)', 'Open model on your graphics card through ComfyUI: free, private, nothing leaves the machine.'],
   own: ['Your own voice', 'You read the script yourself, one short line at a time, in the recording booth: in this studio, in a terminal (mortiflix record), or from files you recorded elsewhere.'],
   none: ['No narration', 'Videos carry their story with on-screen text, music and sound.'],
 };
@@ -875,7 +1035,6 @@ async function voiceSection() {
   async function draw() {
     const chip = (name) => {
       if (name === 'elevenlabs') return h('span', { class: `chip ${v.elevenlabs_key ? 'ok' : ''}` }, v.elevenlabs_key ? 'key saved' : 'needs a key');
-      if (name === 'qwen') return h('span', { class: `chip ${v.local.fits ? 'ok' : 'warn'}` }, v.local.fits ? `${v.local.gpu.name.replace(/^NVIDIA (GeForce )?/, '')} · ${v.local.gpu.vram_gb} GB fits` : 'no suitable GPU found');
       return null;
     };
     const rows = h('ul', { class: 'rows' }, Object.entries(ENGINE_LABELS).map(([name, [title, about]]) => h('li', { class: 'row', style: { cursor: 'pointer' }, onclick: async () => { if (v.engine !== name) { await save({ engine: name }); draw(); } } },
@@ -885,14 +1044,11 @@ async function voiceSection() {
     const panel = h('div');
     fill(wrap, h('h2', null, 'Narration', msg), rows, panel);
     if (v.engine === 'elevenlabs') await elevenPanel(panel);
-    else if (v.engine === 'qwen') await qwenPanel(panel);
     else if (v.engine === 'own') fill(panel, h('div', { class: 'help', style: { padding: '12px 0' } },
       h('p', null, 'When a video reaches its narration, the studio writes the script as short lines and asks you to record them. Open the project and choose ', h('b', null, 'Record narration'), ', or run ', h('code', null, 'mortiflix record <project>'), ' in a terminal.'),
       h('p', null, 'Recorded somewhere else (a DAW, your phone)? Name each file after its line (b01-1.wav, b01-2.m4a…) and run ', h('code', null, 'mortiflix record <project> --import <folder>'), '.'),
       h('p', null, 'For the best sound: a quiet room with soft things around, a hand\'s width from the microphone, headphones on.')));
-    else fill(panel, h('p', { class: 'meta', style: { padding: '12px 0' } }, v.local.fits
-      ? `Want a voice? ${v.local.reason} Pick "This computer" to narrate for free, or ElevenLabs for the most natural voices.`
-      : 'Want a voice? Pick ElevenLabs above (a key from elevenlabs.io).'));
+    else fill(panel, h('p', { class: 'meta', style: { padding: '12px 0' } }, 'Want a voice? Pick ElevenLabs above (a key from elevenlabs.io).'));
   }
 
   // ---- ElevenLabs ----
@@ -906,7 +1062,8 @@ async function voiceSection() {
       draw();
     } }, 'Connect')), account), 'Kept only in the studio folder (secrets.json). Sessions get it only while ElevenLabs is the narration engine.');
     fill(panel, accountRow);
-    if (!v.elevenlabs_key) return;
+    // no key: say so plainly (there is no local voice to fall back to)
+    if (!v.elevenlabs_key) { add(panel, h('p', { class: 'err', style: { padding: '8px 0', whiteSpace: 'normal' } }, v.needs_key || 'No ElevenLabs API key is saved: nothing is spoken until you add one.')); return; }
 
     let acct = null;
     try {
@@ -993,42 +1150,6 @@ async function voiceSection() {
         h('span', null, 'Music usage terms depend on your plan: ', h('a', { href: 'https://elevenlabs.io/music-terms', target: '_blank', rel: 'noopener' }, 'elevenlabs.io/music-terms'))),
       field('Try it', h('div', null, sampleText, h('div', { class: 'actions', style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: () => trySample('elevenlabs', sampleText.value, player) }, 'Speak this line'), h('span', { class: 'meta' }, 'uses about one credit per character')), player)),
       h('p', { class: 'meta', style: { padding: '10px 0' } }, 'Zero-retention mode (no logs at ElevenLabs) is for Enterprise accounts only, so it isn\'t offered here. Voice clones: only of your own voice or with the speaker\'s consent.'),
-    );
-  }
-
-  // ---- Qwen3-TTS through ComfyUI ----
-  async function qwenPanel(panel) {
-    const qc = v.qwen;
-    const status = h('div', { class: 'help' }, 'Checking ComfyUI…');
-    const url = h('input', { type: 'text', value: qc.url, style: { maxWidth: '280px' } });
-    const gpuLine = h('p', { class: 'meta', style: { padding: '8px 0', whiteSpace: 'normal' } }, v.local.reason);
-    fill(panel, gpuLine, field('ComfyUI', h('div', null, h('div', { class: 'actions' }, url, h('button', { class: 'btn', onclick: async () => { await save({ qwen: { url: url.value.trim() } }); draw(); } }, 'Check')), status)));
-    let st;
-    try { st = await api(`/api/voice/qwen/status?url=${encodeURIComponent(qc.url)}`); } catch (err) { st = { ok: false, reason: err.message }; }
-    if (!st.ok) {
-      fill(status, h('span', { class: 'err' }, st.reason));
-      add(panel, h('div', { class: 'field' }, h('label', null, 'Set it up'), h('ol', { style: { margin: 0, paddingLeft: '18px' } },
-        st.step !== 'suite' ? h('li', null, 'Install ComfyUI and start it (', h('a', { href: 'https://www.comfy.org/download', target: '_blank', rel: 'noopener' }, 'comfy.org/download'), '). It listens on http://127.0.0.1:8188 by default.') : null,
-        h('li', null, 'In ComfyUI Manager, install "TTS Audio Suite" (or clone ', h('a', { href: 'https://github.com/diodiogod/TTS-Audio-Suite', target: '_blank', rel: 'noopener' }, 'diodiogod/TTS-Audio-Suite'), ' into custom_nodes and run its install.py).'),
-        h('li', null, 'Restart ComfyUI, then press Check. The Qwen3-TTS models (Apache-2.0) download from Hugging Face on first use: about 4 GB for 1.7B.'))));
-      return;
-    }
-    fill(status, h('span', { class: 'chip ok' }, 'ready'), ` ComfyUI ${st.comfyui || ''} · TTS Audio Suite · ${st.gpu || 'GPU'}${st.vram_free_gb !== null ? ` · ${st.vram_free_gb} GB free now` : ''}`, st.can_listen ? '' : ' · (this suite version has no Qwen3-ASR: lines won\'t be checked)');
-    const custom = st.models.filter((m) => /CustomVoice/.test(m));
-    const pickModel = (m) => (/1\.7B/.test(m) ? 'CustomVoice 1.7B' : 'CustomVoice 0.6B');
-    const sampleText = h('textarea', { style: { minHeight: '60px' } }, 'Every city has a heartbeat. Ours runs on bikes.');
-    const player = h('div');
-    const is17 = /1\.7B/.test(qc.model);
-    add(panel, 
-      field('Model', choiceChips(custom.map(pickModel), qc.model, (m) => save({ qwen: { model: m } }).then(draw)), is17 ? 'Takes a delivery instruction. Needs about 6.5 GB of free GPU memory while it speaks.' : 'Preset voices only, no delivery instruction. About half the memory of 1.7B.'),
-      field('Voice', h('select', { style: { maxWidth: '100%' }, onchange: (ev) => save({ qwen: { voice: ev.target.value } }) },
-        st.voices.map((name) => { const p = v.presets.find((x) => x.id === name); return h('option', { value: name, selected: qc.voice === name }, p ? `${name} · ${p.language} · ${p.about}` : name); })),
-        'Built into the model (no cloning, no consent question). Each speaks all 10 languages; the listed one is its native language.'),
-      field('Language', h('select', { style: { maxWidth: '200px' }, onchange: (ev) => save({ qwen: { language: ev.target.value } }) }, st.languages.map((l) => h('option', { value: l, selected: qc.language === l }, l)))),
-      is17 ? field('Delivery', h('textarea', { style: { minHeight: '60px' }, onchange: (ev) => save({ qwen: { instruct: ev.target.value } }) }, qc.instruct), 'How it should sound, in plain words: pace, warmth, energy. Inline tags like [warm] are not read.') : null,
-      st.runtime_modes.length ? field('Runtime', h('select', { style: { maxWidth: '240px' }, onchange: (ev) => save({ qwen: { runtime_mode: ev.target.value } }) }, st.runtime_modes.map((m) => h('option', { value: m, selected: qc.runtime_mode === m }, m))), 'The suite\'s own setting. Try Main Environment first; if ComfyUI reports a transformers version error, choose its Shared Runtime.') : null,
-      field('Checks', h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: qc.check, disabled: !st.can_listen, onchange: (ev) => save({ qwen: { check: ev.target.checked } }) }), 'Listen back to every line with Qwen3-ASR (retakes misread lines, gives word timings)')),
-      field('Try it', h('div', null, sampleText, h('div', { class: 'actions', style: { marginTop: '8px' } }, h('button', { class: 'btn', onclick: () => trySample('qwen', sampleText.value, player) }, 'Speak this line'), h('span', { class: 'meta' }, 'the first run downloads the model')), player)),
     );
   }
 

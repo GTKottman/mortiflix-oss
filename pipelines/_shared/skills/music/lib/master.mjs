@@ -24,17 +24,29 @@ export function loudness(file) {
 }
 
 // Two-pass loudnorm to the target, 48 kHz 24-bit WAV, plus a 320 kbps MP3 beside it.
+// loudnorm only keeps the music as it is (one fixed gain) when the gain fits under the true-peak limit and the loudness
+// range fits the target; otherwise it falls back to riding the gain like an automatic level control, which changes the
+// mix (doc 15 §3). It says which it did ("normalization_type"); a ride comes back as a warning.
 export function masterTo(input, outWav, { lufs = TARGET.lufs, tp = TARGET.tp, lra = TARGET.lra } = {}) {
   const want = `I=${lufs}:TP=${tp}:LRA=${lra}`;
   const p1 = ffmpeg(['-i', input, '-af', `loudnorm=${want}:print_format=json`, '-f', 'null', '-']);
   const j = p1.stderr.slice(p1.stderr.lastIndexOf('{'), p1.stderr.lastIndexOf('}') + 1);
   let m; try { m = JSON.parse(j); } catch { throw new Error('ffmpeg loudnorm gave no measurement (is the render silent?)'); }
-  const second = `loudnorm=${want}:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true`;
+  const second = `loudnorm=${want}:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true:print_format=json`;
   const p2 = ffmpeg(['-i', input, '-af', second, '-ar', '48000', '-c:a', 'pcm_s24le', outWav]);
   if (p2.status !== 0) throw new Error(`ffmpeg couldn't master: ${p2.stderr.split('\n').slice(-3).join(' ')}`);
+  const normalization = p2.stderr.match(/"normalization_type"\s*:\s*"(\w+)"/)?.[1] || 'unknown';
+  const warnings = [];
+  if (normalization === 'dynamic') {
+    const gain = lufs - Number(m.input_i);
+    const why = Number(m.input_tp) + gain > tp
+      ? `raising it ${gain.toFixed(1)} dB to ${lufs} LUFS would put its peaks at ${(Number(m.input_tp) + gain).toFixed(1)} dBTP, over the ${tp} dBTP limit`
+      : `its loudness range (${m.input_lra} LU) is wider than ${lra} LU`;
+    warnings.push(`the master's level was ridden up and down, not just turned up: ${why}. The mix's balance changed in the master. Lower the loudest, peakiest parts (or the whole mix less hot in the peaks) and master again`);
+  }
   const mp3 = outWav.replace(/\.wav$/, '.mp3');
   ffmpeg(['-i', outWav, '-c:a', 'libmp3lame', '-b:a', '320k', mp3]);
-  return { wav: outWav, mp3, before: { lufs: Number(m.input_i), true_peak: Number(m.input_tp) }, after: loudness(outWav) };
+  return { wav: outWav, mp3, before: { lufs: Number(m.input_i), true_peak: Number(m.input_tp), lra: Number(m.input_lra) }, after: loudness(outWav), normalization, warnings };
 }
 
 // Any audio file the owner brings → a 48 kHz stereo WAV the studio works with.

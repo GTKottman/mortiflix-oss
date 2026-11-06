@@ -1,0 +1,347 @@
+/* Mortiflix Studio design tokens: the one place for colours, type, spacing, radii, sizes and motion.
+   Same values as web/shell.css (Redesign parts/00-design-system.md, the mortiflix.com look). Components use these
+   variables only; a new value is added here first. */
+/* fonts by relative path, so the build carries them and works under any prefix (Morti Drive /studio/app/) */
+@font-face {
+  font-family: 'Sora';
+  src: url('../../../web/assets/sora-latin-wght.woff2') format('woff2');
+  font-weight: 100 800;
+  font-display: swap;
+}
+
+/* the gradient turns: an angle the browser can animate (owner's UI file, 2026-11-04) */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 100deg;
+  inherits: false;
+}
+
+:root {
+  /* grounds, darkest first */
+  --ink: #0b0913;
+  --ink-2: #13101d;
+  --ink-3: #1b172a;
+  --ink-4: #252038;
+  --media: #000;
+
+  /* text */
+  --text: #f5f2ff;
+  --muted: #a39db8;
+  --faint: #756f8a;
+
+  /* hairlines and control borders */
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.14);
+  /* a wavy divider, like a phone's music play line (owner 2026-11-03): one 24 px wave, repeated along the bottom */
+  --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 6'%3E%3Cpath d='M0 3 Q6 0.5 12 3 T24 3' fill='none' stroke='rgba(255,255,255,0.14)' stroke-width='1.25'/%3E%3C/svg%3E");
+  --line-hover: rgba(255, 255, 255, 0.28);
+
+  /* states (always paired with a glyph and a word) */
+  --good: #7ef0b6;
+  --warn: #ffd98a;
+  --bad: #ff7a8a;
+  --busy: #8fb8ff;
+  --link: var(--violet); /* owner 2026-11-04: links purple, gray on hover, no highlight (blue is Being made) */
+  --good-line: rgba(126, 240, 182, 0.35);
+  --bad-line: rgba(255, 122, 138, 0.4);
+
+  /* brand colours (mortiflix.com) and their deeper shades */
+  --violet: #b18cff;
+  --pink: #ff8fd1;
+  --cyan: #7ce8f3;
+  --violet-2: #8a66e8;
+  --pink-2: #e56cb2;
+  --cyan-2: #4fc3d3;
+
+  /* scene colours (Script's per-scene marks; owner: Mortiflix colours only) */
+  --scene-1: var(--violet);
+  --scene-2: var(--pink);
+  --scene-3: var(--cyan);
+  --scene-4: var(--violet-2);
+  --scene-5: var(--pink-2);
+  --scene-6: var(--cyan-2);
+
+  /* sliders and scrubbers: lavender fill and knob on a dark track */
+  --scrub: var(--violet);
+  --scrub-track: var(--ink-4);
+
+  /* the one accent */
+  --grad: linear-gradient(100deg, var(--violet) 0%, var(--pink) 50%, var(--cyan) 100%);
+  --grad-stops: var(--violet) 0%, var(--pink) 50%, var(--cyan) 100%;
+  --grad-ring: conic-gradient(from 200deg, var(--violet), var(--pink), var(--cyan), var(--violet));
+  --on-grad: #120c1f;
+
+  /* fonts */
+  --display: 'Sora', system-ui, sans-serif;
+  --body: 'Sora', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* type scale */
+  --t11: 11px;
+  --t12: 12px;
+  --t13: 13px;
+  --t14: 14px;
+  --t15: 15px;
+  --t16: 16px;
+  --t17: 17px;
+  --t20: 20px;
+  --t-display: 24px;
+  --track-kicker: 0.14em;
+  --track-stage: 0.12em;
+  --track-logo: 0.08em;
+
+  /* spacing 2 4 8 12 16 24 32 48 64 */
+  --s-2: 2px;
+  --s-4: 4px;
+  --s-8: 8px;
+  --s-12: 12px;
+  --s-16: 16px;
+  --s-24: 24px;
+  --s-32: 32px;
+  --s-48: 48px;
+  --s-64: 64px;
+
+  /* radii */
+  --r-xs: 2px;
+  --r-sm: 5px;
+  --r: 7px;
+  --r-lg: 10px;
+  --r-pill: 999px;
+
+  /* control heights */
+  --h-sm: 30px;
+  --h: 36px;
+  --h-lg: 42px;
+  /* every button with words: tight around them, like New project's Auto / Set a length (owner 2026-11-05:
+     "minimal space around the words gives it more of an adult feel") */
+  --btn-h: 26px;
+  --btn-h-sm: 24px;
+  --btn-pad: var(--s-8);
+  --hit: 40px;
+  --h-strip: 44px;
+  --h-toggle: 28px;
+  --h-toggle-sm: 26px;
+  --stat-big: 26px;
+  --tick-w: 20px;
+  --bar-h: 56px;
+  --bar-pad-x: var(--s-24);
+
+  /* sizes of shared pieces */
+  --project-max: 300px;
+  /* a project card's title line and the gap under it: the ‹ › on a shelf line up by it */
+  --card-head: calc(var(--h-sm) + var(--s-4));
+  --tablet-pill-min-w: 236px;
+  --menu-w: 560px;
+  --chart-h: 72px;
+  --switch-w: 36px;
+  --switch-h: 20px;
+  --knob: 14px;
+  --reading: 70ch;
+  --page-max: 1840px;
+  --work-pad-y: var(--s-24);
+  --work-pad-x: var(--s-32);
+
+  /* New project, Home, Lessons, Settings */
+  --violet-deep: #6a4fd0;
+  --field-w: 420px;
+  --check-size: 18px;
+
+  /* VideoPlayer: veils over the picture, the big play button, the volume slider */
+  --scrim: color-mix(in srgb, var(--ink) 72%, transparent);
+  --scrim-light: color-mix(in srgb, var(--ink) 45%, transparent);
+  --scrim-strong: color-mix(in srgb, var(--ink) 92%, transparent);
+  --play-size: calc(var(--s-64) + var(--s-16));
+  --volume-w: 72px;
+
+  /* AudioTimeline: hatching of music clips, a clip's state edge and its selection ring */
+  --hatch: 6px;
+  --clip-edge: 3px;
+  --clip-ring: 4px;
+
+  /* Sound screen: shot picture column, its width with no picture, the open sound's column, the clock's lanes */
+  --shot-picture-w: 560px;
+  --shot-nopicture-w: 320px;
+  --sound-detail-w: 440px;
+  --shot-label-w: 96px;
+  --shot-lane-h: 52px;
+  --shot-talk-inset: 14px;
+
+  /* motion: springy, quick; a press goes down, a hover lifts (owner's UI file, 2026-11-04) */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-press: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --loading-delay: 300ms;
+
+  /* focus */
+  --focus: 2px solid var(--violet);
+  --focus-off: 2px;
+
+  /* stacking: only opaque menus sit above the page */
+  --z-menu: 20;
+}
+
+/* laptop (1366): tighter bar and page */
+@media (max-width: 1599px) {
+  :root {
+    --work-pad-x: var(--s-24);
+    --bar-pad-x: var(--s-16);
+    /* the marking buttons take their own line under the transport */
+    --motion-player-chrome-h: 456px;
+    --project-max: 170px;
+    --shot-picture-w: 400px;
+  }
+}
+@media (max-height: 800px) {
+  :root {
+    --work-pad-y: var(--s-16);
+    --bar-h: 56px;
+    --t-display: 22px;
+    --stat-big: 22px;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html,
+body {
+  height: 100%;
+}
+body {
+  background: var(--ink);
+  color: var(--text);
+  font: 400 var(--t14) / 1.5 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+a {
+  color: var(--link);
+  text-decoration: none;
+  transition: color var(--dur-fast) ease;
+}
+a:hover {
+  color: var(--muted);
+}
+::placeholder {
+  color: var(--faint);
+}
+/* every field the same: a soft violet ring on focus */
+:where(input:not([type='range'], [type='checkbox'], [type='radio']), textarea, select) {
+  transition:
+    border-color 180ms var(--ease-out-quart),
+    box-shadow 220ms var(--ease-out-expo);
+}
+:where(input:not([type='range'], [type='checkbox'], [type='radio']), textarea, select):focus {
+  outline: 0;
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(177, 140, 255, 0.16);
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: var(--focus);
+  outline-offset: var(--focus-off);
+}
+:where(a, button, [tabindex]):focus:not(:focus-visible) {
+  outline: none;
+}
+
+@keyframes turn-grad {
+  from {
+    --angle: 100deg;
+  }
+  to {
+    --angle: 460deg;
+  }
+}
+@keyframes danger-shake {
+  0%,
+  100% {
+    transform: translateY(-1px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-1px) rotate(-1.2deg) translateX(-1px);
+  }
+  75% {
+    transform: translateY(-1px) rotate(1.2deg) translateX(1px);
+  }
+}
+@keyframes mfx-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@keyframes mfx-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* voice / review pieces */
+:root {
+  --voice-inspector-w: clamp(21rem, 33%, 32rem);
+  /* review: the right column, what sits above and below the picture, the smallest picture, the note field */
+  --review-side-w: 420px;
+  --review-chrome-h: 380px;
+  --review-picture-min-w: 320px;
+  --note-field-min-w: 180px;
+  --mark-note-min-w: 280px;
+}
+@media (max-width: 1599px) {
+  :root {
+    --review-side-w: 340px;
+  }
+}
+@media (max-height: 800px) {
+  :root {
+    --review-chrome-h: 330px;
+  }
+}
+
+/* motion: sizes of the Motion screen's note rows, note field, tablet pill, player and version switch */
+:root {
+  --motion-thumb-w: 96px;
+  --motion-edge-w: 3px;
+  --motion-edit-min-h: 56px;
+  --motion-composer-text-basis: 260px;
+  --motion-composer-text-min-w: 200px;
+  --motion-composer-text-max-h: 120px;
+  --motion-pill-min-w: 320px;
+  --motion-menu-min-w: 260px;
+  --motion-col: 720px;
+  --motion-side-min-w: 380px;
+  --motion-player-chrome-h: 400px;
+  --motion-player-min-h: 240px;
+  --motion-pin: 24px;
+  --motion-play: 52px;
+  --motion-strip-h: 64px;
+  --motion-mark-side-w: 320px;
+  --motion-pulse-w: 140px;
+
+  /* The ⋯ menu (MoreMenu) */
+  --more-menu-w: 260px;
+}

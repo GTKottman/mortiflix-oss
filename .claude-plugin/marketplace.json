@@ -13,7 +13,7 @@
       "source": "./plugin",
       "description": "/mortiflix walks you through Mortiflix in Claude Code: install, setup, a brief, every review gate, delivery.",
       "category": "productivity",
-      "tags": ["video", "motion-design", "remotion", "studio"]
+      "tags": ["video", "motion-design", "kinetograph", "studio"]
     }
   ]
 }

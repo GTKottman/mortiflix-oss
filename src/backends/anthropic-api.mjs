@@ -2,12 +2,14 @@
 // shell in the project folder, a file editor confined to that folder (which can also *show* Claude the frames it
 // rendered, for visual QC), and optionally web search + fetch. Long sessions stay inside the context window with
 // server-side compaction; the stable prefix is prompt-cached.
+import { refuseReal } from '../replay.mjs';
 import Anthropic from '@anthropic-ai/sdk';
 import { spawn } from 'node:child_process';
 import { createWriteStream, existsSync, readFileSync, writeFileSync, mkdirSync, realpathSync, statSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname, extname, relative } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { REPO, readSecret, isInside } from '../studio.mjs';
+import { withPath, groupOptions, killTree, findGitBash, fromShellPath } from '../platform.mjs';
 
 export const name = 'anthropic-api';
 export const DEFAULT_MODEL = 'claude-opus-5-5';
@@ -37,12 +39,13 @@ export function available(config, root) {
 }
 
 export async function run({ root, workdir, prompt, env, transcript, onActivity, signal, config }) {
+  refuseReal('the Anthropic API backend');
   const { key } = credentials(root);
   // `_fetch` is for tests: a fake API that streams scripted turns (no network, no cost).
   const client = new Anthropic({ ...(key ? { apiKey: key } : {}), maxRetries: 4, ...(config._fetch ? { fetch: config._fetch, apiKey: 'test' } : {}) });
   const model = config.model || DEFAULT_MODEL;
   const work = realpathSync(workdir);
-  const shell = new Shell(work, { ...process.env, ...env, PATH: `${join(REPO, 'bin')}:${process.env.PATH}` });
+  const shell = new Shell(work, withPath({ ...process.env, ...env }, join(REPO, 'bin')));
   const out = createWriteStream(transcript, { flags: 'a' });
   const record = (obj) => out.write(JSON.stringify(obj) + '\n');
 
@@ -167,7 +170,9 @@ export class Shell {
   start() {
     this.buf = '';
     this.dead = false;
-    const p = spawn('bash', ['--noprofile', '--norc'], { cwd: this.cwd, env: this.env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    // On Windows the shell is Git for Windows' bash (the installer puts it there; mortiflix doctor checks it).
+    const bash = process.platform === 'win32' ? findGitBash() || 'bash.exe' : 'bash';
+    const p = spawn(bash, ['--noprofile', '--norc'], { cwd: this.cwd, env: this.env, stdio: ['pipe', 'pipe', 'pipe'], ...groupOptions() });
     this.p = p;
     // Each handler acts only for its own process: a killed shell's late events must not touch its replacement.
     const mine = () => this.p === p;
@@ -201,7 +206,7 @@ export class Shell {
   }
 
   kill() {
-    try { process.kill(-this.p.pid, 'SIGKILL'); } catch { /* gone */ }
+    killTree(this.p.pid, { signal: 'SIGKILL' });
   }
 
   close() {
@@ -282,7 +287,8 @@ export function confine(work, path, creating = false) {
   if (typeof path !== 'string' || !path) throw new Error('path is required');
   // macOS keeps temp folders behind symlinks (/var -> /private/var): compare against the real project folder.
   if (existsSync(work)) work = realpathSync(work);
-  const abs = resolve(work, path);
+  // Paths from the shell on Windows are Git Bash's (/c/Users/…): read them as the C:\Users\… they are.
+  const abs = resolve(work, fromShellPath(path));
   let probe = abs;
   if (creating) while (!existsSync(probe)) probe = dirname(probe);
   const real = existsSync(probe) ? realpathSync(probe) : probe;

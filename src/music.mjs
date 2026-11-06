@@ -13,11 +13,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, copyFileSync, readdirSync } from 'node:fs';
 import { join, extname, basename } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { REPO, UserError, writeJson } from './studio.mjs';
 import { projectPaths, loadProject, event, now } from './projects.mjs';
 import { zip, dirEntries } from './zip.mjs';
+import { bpbOf } from './music/compose.mjs';
 
-const engine = (name) => import(join(REPO, 'pipelines', '_shared', 'skills', 'music', 'lib', name));
+// A file URL: import() reads a plain C:\... path as a URL with the scheme "c:" and refuses it.
+const engine = (name) => import(pathToFileURL(join(REPO, 'pipelines', '_shared', 'skills', 'music', 'lib', name)).href);
 export const MAX_MASTER_BYTES = 1024 * 1024 * 1024;
 export const AUDIO_EXT = ['.wav', '.aif', '.aiff', '.flac', '.mp3', '.m4a', '.ogg'];
 
@@ -40,7 +43,7 @@ export function finishesOwnMaster(project) {
 export function expectation(root, id) {
   const mp = musicPaths(root, id);
   const bp = readJ(mp.blueprint); if (!bp?.bpm || !bp?.bars) return null;
-  const [n, d] = String(bp.meter || '4/4').split('/').map(Number); const bpb = (n * 4) / d;
+  const bpb = bpbOf(bp.meter); // beats as the composer counts them (music/compose.mjs), not quarter notes
   const notes = readJ(mp.notes);
   const first = notes ? Math.min(...notes.tracks.flatMap((t) => t.notes.map((x) => x.start))) : null;
   return { title: bp.title || null, bpm: bp.bpm, meter: bp.meter || '4/4', bars: bp.bars, seconds: +(bp.bars * bpb * 60 / bp.bpm).toFixed(3),

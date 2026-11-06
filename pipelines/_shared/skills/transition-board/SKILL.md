@@ -104,9 +104,10 @@ import liquidFill from './transitions/liquid-fill';
   timing={linearTiming({ durationInFrames: 96 })} />
 ```
 
-Always `linearTiming` (each transition does its own easing). Transitions whose catalog entry `requires` `webgl2`
-render with `--gl=angle` (or `--gl=swangle` with no GPU). Keep every cut in one place in the video's code (one
-list of cuts), so a changed board changes the video in one edit.
+Always `linearTiming` (each transition does its own easing). The studio renders with kinetograph, not Remotion: the
+`remotion` and `@remotion/transitions` imports resolve to kinetograph's own, with no Chrome, and transitions whose
+catalog entry `requires` `webgl2` render as they are (no `--gl` flag). Keep every cut in one place in the video's code
+(one list of cuts), so a changed board changes the video in one edit.
 
 ## 5. Render the in-betweens
 
@@ -125,9 +126,11 @@ const HOLD = 30;   // frames of the outgoing still before the transition starts
 ```
 
 Also render the **strip**: a still every 10% of the transition (10% to 90%), listed as `"strip"` in the cut's
-entry: the check reads every one of them for blank frames. Render through `mfx render` (`npx remotion still …
---frame=N`, with `--gl=angle` where needed). Look at every in-between: if the carrier doesn't read in it, the cut
-isn't working yet. Fix the choice, not the frame.
+entry: the check reads every one of them for blank frames. Render through `mfx render` (kinetograph: the cut's
+transition frames as one PNG sequence, or `kinetograph still` for a single frame; never `npx remotion`). Look at every
+in-between: if the carrier doesn't read in it, the cut isn't working yet. Fix the choice, not the frame. kinetograph
+draws a few things differently from Chrome (`mix-blend-mode: plus-lighter`, `mask-image: url(#svg-mask)` on HTML): a
+blank or hard-cut in-between from one of those is the engine, so choose another transition.
 
 ## 6. Submit the board
 

@@ -140,11 +140,11 @@ test('the plugin: valid manifests, owner-only skill, and every command it names 
   for (const [, cmd] of text.matchAll(/`mortiflix ([a-z]+)/g)) assert.ok(known.has(cmd), `the skill names "mortiflix ${cmd}", which the CLI doesn't have`);
 });
 
-test('a claude-code session doesn\'t inherit the Claude Code conversation that started the run', async (t) => {
+test('a claude-code session: its own Claude Code, the prompt on stdin, mfx first on its PATH', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'mfx-cc-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const fake = join(dir, 'claude');
-  writeFileSync(fake, `#!/bin/sh\nenv > "${join(dir, 'env.txt')}"\necho '{"type":"result","result":"ok","usage":{"input_tokens":1,"output_tokens":1}}'\n`);
+  writeFileSync(fake, `#!/bin/sh\nenv > "${join(dir, 'env.txt')}"\ncat > "${join(dir, 'prompt.txt')}"\necho "$@" > "${join(dir, 'args.txt')}"\necho '{"type":"result","result":"ok","usage":{"input_tokens":1,"output_tokens":1}}'\n`);
   chmodSync(fake, 0o755);
   const saved = {};
   for (const k of ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_MESSAGING_SOCKET']) { saved[k] = process.env[k]; process.env[k] = 'parent'; }
@@ -155,4 +155,53 @@ test('a claude-code session doesn\'t inherit the Claude Code conversation that s
   const env = readFileSync(join(dir, 'env.txt'), 'utf8');
   for (const k of claudeCode.PARENT_SESSION_VARS) assert.doesNotMatch(env, new RegExp(`^${k}=`, 'm'));
   assert.match(env, /^MFX_TOKEN=t$/m);
+  // The prompt arrives on stdin, never as an argument (cmd.exe can't be trusted to pass it through on Windows).
+  assert.equal(readFileSync(join(dir, 'prompt.txt'), 'utf8'), 'go');
+  assert.doesNotMatch(readFileSync(join(dir, 'args.txt'), 'utf8'), /\bgo\b/);
+  assert.match(env, new RegExp(`^PATH=${join(REPO, 'bin')}:`, 'm'));
+});
+
+test('sessions start lean: no owner MCP servers, plugins, skills or global CLAUDE.md, unless turned off', () => {
+  const base = ['--permission-mode', 'acceptEdits', '--allowedTools', 'Bash Read'];
+  const lean = claudeCode.leanArgs(base, {});
+  assert.deepEqual(lean.slice(0, 4), base);
+  assert.ok(lean.includes('--strict-mcp-config'));
+  assert.equal(lean[lean.indexOf('--setting-sources') + 1], 'project,local');
+  assert.equal(lean[lean.indexOf('--tools') + 1], claudeCode.SESSION_TOOLS.join(' '));
+  assert.match(JSON.parse(lean[lean.indexOf('--settings') + 1]).claudeMdExcludes[0], /\.claude[\\/]CLAUDE\.md$/);
+  assert.deepEqual(claudeCode.leanArgs(base, { leanSessions: false }), base);
+  // a flag the owner set themselves stays theirs
+  const own = claudeCode.leanArgs([...base, '--tools', 'Bash'], {});
+  assert.equal(own.filter((a) => a === '--tools').length, 1);
+  assert.equal(own[own.indexOf('--tools') + 1], 'Bash');
+});
+
+test('the session prompt carries the start files, so a session starts on the work instead of opening them', async () => {
+  const { startPrompt } = await import('../src/runner.mjs');
+  const work = mkdtempSync(join(tmpdir(), 'mfx-start-'));
+  try {
+    const { mkdirSync } = await import('node:fs');
+    mkdirSync(join(work, 'pipeline'));
+    mkdirSync(join(work, '.mortiflix'));
+    mkdirSync(join(work, 'feedback'));
+    writeFileSync(join(work, 'CLAUDE.md'), '# brief file');
+    writeFileSync(join(work, 'pipeline', 'PIPELINE.md'), 'pipeline steps');
+    writeFileSync(join(work, '.mortiflix', 'GATES.md'), 'gate protocol');
+    writeFileSync(join(work, 'JOURNAL.md'), `old start ${'x'.repeat(20_000)} newest line`);
+    writeFileSync(join(work, 'feedback', 'brief-v1.json'), '{"answers":1}');
+    const p = startPrompt(work, 'Carrying on.');
+    for (const s of ['# brief file', 'pipeline steps', 'gate protocol', 'newest line', '{"answers":1}', '<file path="feedback/brief-v1.json">', 'Why this session started: Carrying on.']) assert.ok(p.includes(s), s);
+    assert.ok(!p.includes('old start'), 'a long journal keeps only its newest part');
+    assert.ok(!startPrompt(work, 'r', { claudeMd: false }).includes('# brief file'), 'the API backend sends CLAUDE.md itself');
+  } finally { rmSync(work, { recursive: true, force: true }); }
+});
+
+test('a session never reads or runs the service code: its folder is denied to the file tools and to any shell command naming it', async () => {
+  const { serviceDeny, leanArgs: lean } = await import('../src/backends/claude-code.mjs');
+  const deny = serviceDeny('/srv/mfx');
+  assert.deepEqual(deny.slice(0, 4), ['Read(//srv/mfx/**)', 'Edit(//srv/mfx/**)', 'Write(//srv/mfx/**)', 'Bash(*/srv/mfx*)']);
+  const args = lean([]);
+  const settings = JSON.parse(args[args.indexOf('--settings') + 1]);
+  assert.ok(settings.permissions.deny.some((r) => /^Read\(\/\/.*\/\*\*\)$/.test(r)));
+  assert.ok(settings.claudeMdExcludes.length);
 });

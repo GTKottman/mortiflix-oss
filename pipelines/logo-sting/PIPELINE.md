@@ -18,9 +18,10 @@ Skills: `motion-design`, `remotion-motion`, `final-pass`.
 | Step | Review | What happens |
 |---|---|---|
 | `directions` | frames | Study the logo (`input/logo/`). Three directions, each a strip of three stills (start, middle, settled) composited side by side into one image, labelled "A · Draws itself" etc. The note describes each in a line. Ask which one, with your favourite as the default. |
-| `final` | video | Build the chosen direction in Remotion at full quality, with a short sound if the brief wants one, `qc.mjs … --end-hold` (the settled logo is a designed hold), look at the sheet. Submit the video and the sheet. |
+| `final` | video | Build the chosen direction at full quality (Remotion-API TSX, rendered by Kinetograph), with a short sound if the brief wants one, `qc.mjs … --end-hold` (the settled logo is a designed hold), look at the sheet. Submit the video and the sheet. |
 
-Making a strip: render three stills with `npx remotion still` (through `mfx render`), then
+Making a strip: render three stills with `kinetograph still src/index.ts <frame> --comp Main -o ../out/frames/a1.png` (through
+`mfx render`; the remotion-motion skill has the exact commands), then
 `ffmpeg -i a1.png -i a2.png -i a3.png -filter_complex hstack=inputs=3 out/frames/direction-a.png`.
 
 ## Status lines

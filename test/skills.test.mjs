@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const SETUP = fileURLToPath(new URL('../pipelines/_shared/skills/remotion-motion/setup.mjs', import.meta.url));
 
-test('remotion setup installs once per studio and links every project', (t) => {
+test('motion setup (Remotion API, rendered by kinetograph) installs once per studio and links every project', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'mfx-setup-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const npm = join(dir, 'fake-npm');
@@ -23,8 +23,8 @@ test('remotion setup installs once per studio and links every project', (t) => {
     assert.ok(lstatSync(join(dir, p, 'video', 'node_modules')).isSymbolicLink());
     assert.ok(existsSync(join(dir, p, 'video', 'node_modules', 'remotion')));
   }
-  // Installed exactly once, into one shared folder.
-  assert.equal(readdirSync(join(dir, 'shared')).filter((n) => n.startsWith('remotion-')).length, 1);
+  // Installed exactly once, into one shared folder. (Any name: the folder's prefix may change now kinetograph renders.)
+  assert.equal(readdirSync(join(dir, 'shared'), { withFileTypes: true }).filter((e) => e.isDirectory()).length, 1);
   assert.equal(readFileSync(join(dir, 'shared', 'installs.log'), 'utf8').trim().split('\n').length, 1);
   assert.equal(readlinkSync(join(dir, 'a', 'video', 'node_modules')), readlinkSync(join(dir, 'b', 'video', 'node_modules')));
   // Outside a session: a normal local install.

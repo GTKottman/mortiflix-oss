@@ -8,7 +8,19 @@
 //                     "C:\..." as a remote host, so it must not be the one found first on the PATH
 //   findGitBash()     Git for Windows' bash.exe: Claude Code's Bash tool and the sessions' shell commands need it
 //   openCommand(file) how to open a file in its default app
-import { existsSync } from 'node:fs';
+//
+// For sessions:
+//   ipcPath(name)      where the bridge listens: a Unix socket, or on Windows a named pipe (\\.\pipe\name)
+//   withPath(env, dir) env with dir first on its PATH, under the one PATH key Windows already uses (Path or PATH)
+//   groupOptions()     spawn options for a process whose whole tree may be stopped later
+//   killTree(pid)      stop it and everything it started (Windows has no process groups: taskkill /T)
+//   killTreeHard(pid)  the same, then SIGKILL on the group if it is still there after a grace period
+//   pidAlive(pid)      is it still there (a negative pid: is any process of that group still there)
+//   procStart(pid)     when it started (Linux /proc), so a recycled pid is not taken for the old process
+//   fromShellPath(p)   a Git Bash path (/c/Users/…, /tmp/…) as Windows sees it (C:\Users\…)
+//   restrictToOwner(f) a secrets file only you can read: mode 600, or on Windows an ACL for you alone
+import { existsSync, chmodSync, readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { delimiter as hostDelimiter, dirname, join, win32, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,7 +56,9 @@ export function cmdQuote(arg) {
 // What to spawn for `cmd args`: { file, args, options }. Pass `options` on to spawn/spawnSync.
 export function command(cmd, args = [], { platform = process.platform, env = process.env, exists = existsSync } = {}) {
   if (platform !== 'win32') return { file: cmd, args, options: {} };
-  const found = which(cmd, { platform, env, exists }) || cmd;
+  // `bash` (the render queue's `bash -c` lines) is Git Bash: which() would find System32\bash.exe, WSL's, first.
+  const gitBash = cmd === 'bash' ? findGitBash({ platform, env, exists }) : null;
+  const found = gitBash || which(cmd, { platform, env, exists }) || cmd;
   if (!/\.(cmd|bat)$/i.test(found)) return { file: found, args, options: { windowsHide: true } };
   const line = [found, ...args].map(cmdQuote).join(' ');
   return { file: envGet(env, 'ComSpec') || 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], options: { windowsVerbatimArguments: true, windowsHide: true } };
@@ -77,4 +91,84 @@ export function openCommand(file, { platform = process.platform } = {}) {
   if (platform === 'win32') return { file: 'cmd.exe', args: ['/d', '/s', '/c', `"start "" ${cmdQuote(file)}"`], options: { windowsVerbatimArguments: true, windowsHide: true } };
   if (platform === 'darwin') return { file: 'open', args: [file], options: {} };
   return { file: 'xdg-open', args: [file], options: {} };
+}
+
+export function ipcPath(name, { platform = process.platform, tmp } = {}) {
+  if (platform === 'win32') return `\\\\.\\pipe\\${name}`;
+  return posix.join(tmp, `${name}.sock`);
+}
+
+export function withPath(env, dir, { platform = process.platform } = {}) {
+  const out = { ...env };
+  // Windows looks names up case-insensitively, so "Path" and "PATH" side by side would leave which one a child
+  // process sees to chance: keep exactly one, under the name it already had.
+  const keys = Object.keys(out).filter((k) => (platform === 'win32' ? k.toUpperCase() === 'PATH' : k === 'PATH'));
+  const key = keys[0] || 'PATH';
+  const cur = keys.map((k) => out[k]).find((v) => v) || '';
+  for (const k of keys) delete out[k];
+  out[key] = cur ? `${dir}${pathDelimiter(platform)}${cur}` : dir;
+  return out;
+}
+
+export const groupOptions = ({ platform = process.platform } = {}) => (platform === 'win32' ? { windowsHide: true } : { detached: true });
+
+export function killTree(pid, { platform = process.platform, signal = 'SIGTERM', run = spawnSync } = {}) {
+  if (!pid) return;
+  if (platform === 'win32') { run('taskkill', ['/T', '/F', '/PID', String(pid)], { stdio: 'ignore', windowsHide: true }); return; }
+  try { process.kill(-pid, signal); } catch { /* gone */ }
+}
+
+// Is this process (or, with a negative pid, this process group) still alive? Signal 0 only checks; EPERM means it
+// exists but isn't ours.
+export function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid === 0) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+
+// Stop a tree for good: SIGTERM to the group now (it may clean up), SIGKILL to whatever of the group is left after
+// `graceMs` (a process can ignore SIGTERM, never SIGKILL). On Windows taskkill /F already forces. Returns the timer.
+export function killTreeHard(pid, { graceMs = 5000, platform = process.platform } = {}) {
+  if (!pid) return null;
+  killTree(pid, { platform });
+  if (platform === 'win32') return null;
+  const t = setTimeout(() => { if (pidAlive(-pid)) killTree(pid, { platform, signal: 'SIGKILL' }); }, graceMs);
+  t.unref?.();
+  return t;
+}
+
+// When a process started: field 22 of /proc/<pid>/stat (clock ticks since boot). A pid plus its start names one
+// process, so a pid the system later gave to another program is not mistaken for it. null without /proc.
+export function procStart(pid) {
+  try {
+    const s = readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return s.slice(s.lastIndexOf(')') + 2).split(' ')[19] || null;
+  } catch { return null; }
+}
+
+export function fromShellPath(p, { platform = process.platform, cygpath = gitCygpath } = {}) {
+  if (platform !== 'win32' || typeof p !== 'string' || !p.startsWith('/')) return p;
+  const m = p.match(/^\/([a-zA-Z])(?:\/(.*))?$/);
+  if (m) return `${m[1].toUpperCase()}:\\${(m[2] || '').replaceAll('/', '\\')}`;
+  // Git Bash's own folders (/tmp is your Temp folder, / is Git's install folder): only it knows where they are.
+  return cygpath(p) || p;
+}
+
+function gitCygpath(p) {
+  const bash = findGitBash();
+  if (!bash) return null;
+  const exe = win32.join(win32.dirname(win32.dirname(bash)), 'usr', 'bin', 'cygpath.exe');
+  const r = spawnSync(existsSync(exe) ? exe : 'cygpath', ['-w', p], { encoding: 'utf8', windowsHide: true });
+  return r.status === 0 ? r.stdout.trim() || null : null;
+}
+
+export function restrictToOwner(file, { platform = process.platform, env = process.env, run = spawnSync } = {}) {
+  if (platform !== 'win32') { chmodSync(file, 0o600); return true; }
+  // The file mode means nothing on Windows: drop inherited permissions and grant only the current user. The user is
+  // named by their SID: USERDOMAIN can be the workgroup (seen over SSH), and icacls refuses "WORKGROUP\you" outright.
+  const who = run('whoami', ['/user', '/fo', 'csv', '/nh'], { encoding: 'utf8', windowsHide: true });
+  const sid = String(who?.stdout || '').match(/"(S-1-[\d-]+)"/)?.[1];
+  const user = sid ? `*${sid}` : envGet(env, 'USERDOMAIN') && envGet(env, 'USERNAME') ? `${envGet(env, 'USERDOMAIN')}\\${envGet(env, 'USERNAME')}` : envGet(env, 'USERNAME');
+  if (!user) return false;
+  const r = run('icacls', [file, '/inheritance:r', '/grant:r', `${user}:F`], { stdio: 'ignore', windowsHide: true });
+  return r.status === 0;
 }

@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { pipeline as streamPipeline } from 'node:stream/promises';
 import { paths, readJson, writeJson, withLock, UserError, loadConfig } from './studio.mjs';
 import { musicConfig } from './setup.mjs';
-import { findPipeline, loadPipeline, snapshotPipeline } from './pipelines.mjs';
+import { findPipeline, loadPipeline, snapshotPipeline, migrateProjectPipeline } from './pipelines.mjs';
 
 export const STATES = ['draft', 'queued', 'waiting', 'paused', 'delivered', 'cancelled'];
 
@@ -29,10 +29,17 @@ export function projectPaths(root, id) {
   };
 }
 
+// Letters with accents become their plain letters (ö→o, é→e, ß→ss), so a name keeps its words: NFKD alone split "ö" into
+// "o" plus a mark that the slug then turned into a hyphen ("Gödel" → "go-del").
+const SPELLED = { ß: 'ss', ẞ: 'SS', æ: 'ae', Æ: 'AE', œ: 'oe', Œ: 'OE', ø: 'o', Ø: 'O', ł: 'l', Ł: 'L', đ: 'd', Đ: 'D', ð: 'd', Ð: 'D', þ: 'th', Þ: 'Th', ı: 'i' };
+export function plainLetters(text) {
+  return String(text).normalize('NFKD').replace(/\p{M}+/gu, '').replace(/[ßẞæÆœŒøØłŁđĐðÐþÞı]/g, (c) => SPELLED[c] || c);
+}
+
 export function newId(title) {
   const d = new Date();
   const ymd = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
-  const slug = String(title || 'video').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'video';
+  const slug = plainLetters(title || 'video').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'video';
   return `${ymd}-${slug}-${randomBytes(2).toString('hex')}`;
 }
 
@@ -50,7 +57,9 @@ export function createProject(root, { pipeline: slug, title, answers = {}, backe
     if (q.type === 'files') continue;
     const v = answers[q.id];
     if (v === undefined || v === null || v === '') continue;
-    if (q.type === 'choice' && !q.choices.includes(v)) throw new UserError(`"${q.label || q.id}" must be one of: ${q.choices.join(', ')}`);
+    // A choice takes one of its choices or the owner's own words (the Custom option), unless the pipeline says
+    // "custom": false for it.
+    if (q.type === 'choice' && !q.choices.includes(v) && (q.custom === false || !String(v).trim() || String(v).length > 500)) throw new UserError(`"${q.label || q.id}" must be one of: ${q.choices.join(', ')}${q.custom === false ? '' : ', or your own words (up to 500 characters)'}`);
     clean[q.id] = String(v).slice(0, 20_000);
   }
   const project = {
@@ -111,6 +120,10 @@ export function startProject(root, id) {
     const noMusic = musicConfig(loadConfig(root)).engine === 'none' || /^\s*(no|none|off)\b/i.test(String(p.intake.answers.music ?? ''));
     for (const s of pipeline.steps) {
       if (s.when === 'music' && noMusic) { p.steps ||= {}; p.steps[s.key] = { state: 'skipped' }; }
+      // Voice needs a narrated brief ("On-screen text and music only" has no voice).
+      if (s.when === 'voice' && /on-screen text|no narration|^\s*(no|none|off)\b/i.test(String(p.intake.answers.voice ?? ''))) { p.steps ||= {}; p.steps[s.key] = { state: 'skipped' }; }
+      // A step the preset turned off (doc 31 page 6).
+      if (s.off) { p.steps ||= {}; p.steps[s.key] = { state: 'skipped', off: true }; }
     }
     p.state = 'queued';
     p.queued_at = now();
@@ -130,32 +143,48 @@ export function listProjects(root) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
     .filter((id) => existsSync(join(dir, id, 'project.json')))
-    .map((id) => { try { return readJson(join(dir, id, 'project.json')); } catch { return null; } })
+    // a damaged record is left out of the list, but never silently: the log says which and why
+    .map((id) => { try { return readJson(join(dir, id, 'project.json')); } catch (e) { console.error(`project ${id}: project.json can't be read, left out of the list (${e.message})`); return null; } })
     .filter(Boolean)
     .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
 
 // Every change to a project goes through here: locked, so the web UI, the CLI and the runner never clobber each other.
+// The log follows the record: events the change logs (event() inside `fn`) are written only after project.json is,
+// so a change that fails or is cut short never leaves the log saying APPROVED while the record says in_review.
+const deferred = new Map(); // events file -> rows of the update in progress for that project
 export function update(root, id, fn) {
   const pp = projectPaths(root, id);
   return withLock(pp.lock, () => {
-    const p = readJson(pp.file);
-    const out = fn(p);
-    p.updated_at = now();
-    writeJson(pp.file, p);
-    return out === undefined ? p : out;
+    const rows = [];
+    deferred.set(pp.events, rows);
+    try {
+      const p = readJson(pp.file);
+      const out = fn(p);
+      p.updated_at = now();
+      writeJson(pp.file, p);
+      deferred.delete(pp.events);
+      if (rows.length) appendFileSync(pp.events, rows.map((r) => JSON.stringify(r) + '\n').join(''));
+      return out === undefined ? p : out;
+    } finally {
+      deferred.delete(pp.events);
+    }
   });
 }
 
 export function projectPipeline(root, id) {
-  return loadPipeline(projectPaths(root, id).pipeline);
+  const pp = projectPaths(root, id);
+  migrateProjectPipeline(pp.pipeline, pp.work);
+  return loadPipeline(pp.pipeline, { lenient: true });
 }
 
 // The project log: append-only, one JSON object per line.
 export function event(root, id, { event: name, actor = 'studio', step = null, version = null, details = '' }) {
   const pp = projectPaths(root, id);
   const row = { t: now(), event: name, actor, step, version, details: String(details ?? '').slice(0, 4000) };
-  appendFileSync(pp.events, JSON.stringify(row) + '\n');
+  const pending = deferred.get(pp.events);
+  if (pending) pending.push(row); // inside update(): written right after project.json
+  else appendFileSync(pp.events, JSON.stringify(row) + '\n');
   return row;
 }
 
@@ -174,7 +203,7 @@ export function readJournal(root, id, { tailChars = 6000 } = {}) {
 }
 
 export function safeName(name) {
-  const base = basename(String(name || 'file')).normalize('NFKD').replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '').slice(0, 100);
+  const base = plainLetters(basename(String(name || 'file'))).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[.-]+/, '').slice(0, 100);
   return base || 'file';
 }
 

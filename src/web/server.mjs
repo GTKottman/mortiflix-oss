@@ -10,17 +10,27 @@ import { createReadStream, existsSync, statSync, readFileSync, readdirSync, real
 import { join, extname, basename, resolve } from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { REPO, paths, loadConfig, saveConfig, readSecret, writeSecret, readJson, isInside, UserError } from '../studio.mjs';
-import { listPipelines } from '../pipelines.mjs';
+import { listPipelines, savePreset } from '../pipelines.mjs';
+import { record, ttsCredits } from '../svc/ledger.mjs';
 import { createProject, addIntakeFile, startProject, listProjects, loadProject, projectPaths, projectPipeline, readEvents, readJournal } from '../projects.mjs';
 import * as gates from '../gates.mjs';
 import { Runner, BACKENDS } from '../runner.mjs';
 import * as voice from '../voice/index.mjs';
 import * as keys from '../keys.mjs';
 import * as setup from '../setup.mjs';
+import * as craft from '../craft.mjs';
 import * as booth from '../booth.mjs';
 import * as music from '../music.mjs';
+import { songView, songPaths, onSongSaved } from '../song-store.mjs';
+import { engineFor, enginePaths, BROWSER_COMMANDS } from '../daw-engine.mjs';
+import { applyOps } from '../song-ops.mjs';
+import { runFastFix } from '../song-fix.mjs';
+import { canvasView, nodeAction } from '../canvas.mjs';
+import * as studioEdit from '../studio-edit.mjs';
+import { projectSkills, readSkillText } from '../skills.mjs';
 import * as pub from '../publish.mjs';
 import { costText } from '../usage.mjs';
+import { createStrudel } from '../strudel/edit.mjs';
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -48,10 +58,41 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
   const changed = () => { clearTimeout(changeTimer); changeTimer = setTimeout(() => broadcast('change', {}), 120); };
   runner.on('change', changed);
   runner.on('activity', (a) => broadcast('activity', a));
+  let strudel = null; // the Strudel evaluator process, started on first use (MIDI ⇄ Strudel)
+  // The sound engine (doc 16): started the first time the music plays, never at serve; one per studio.
+  let daw = null;
+  let dawProject = null;
+  let dawDevice = null;
+  const dawEngine = () => {
+    if (daw) return daw;
+    daw = engineFor(root);
+    daw.on('clock', (m) => broadcast('daw-clock', { ...m, project: dawProject }));
+    daw.on('state', (st) => broadcast('daw-state', { state: st.state, failure: st.failure || null, log: st.log || null }));
+    daw.on('xrun', (m) => broadcast('daw-state', { state: daw.state, xruns: m.count }));
+    return daw;
+  };
+  async function dawStart(id) {
+    const e = dawEngine();
+    if (e.state !== 'running') { await e.start(); dawDevice = null; dawProject = null; }
+    if (!dawDevice) {
+      // PipeWire through JACK first, then ALSA (doc 16 §8)
+      for (const backend of ['JACK', 'ALSA']) { try { dawDevice = await e.call('device.set', { backend, rate: 48000, block: 1024 }, { timeout: 15000 }); break; } catch { dawDevice = null; } }
+      if (!dawDevice) throw new Error('the sound engine found no output (JACK or ALSA)');
+    }
+    if (dawProject !== id) {
+      const loaded = await e.call('song.load', { path: songPaths(root, id).song }, { timeout: 120000 });
+      dawProject = id;
+      await e.call('clock.subscribe', {});
+      return { device: dawDevice, song: loaded };
+    }
+    return { device: dawDevice };
+  }
+  // a saved song change is heard at once: the engine rebuilds it, keeping its place
+  onSongSaved((r, id) => { if (r === root && daw?.state === 'running' && dawProject === id) daw.call('song.patch', { path: songPaths(root, id).song }, { timeout: 120000 }).catch(() => {}); });
 
   const server = createServer((req, res) => {
     handle(req, res).catch((e) => {
-      const code = /^no (project|step|question|pipeline)/.test(e.message) ? 404 : e instanceof UserError || e instanceof BadRequest ? 400 : 500;
+      const code = /^no (project|step|question|pipeline)/.test(e.message) ? 404 : e instanceof UserError || e instanceof BadRequest || e instanceof gates.GateError ? 400 : 500;
       if (!res.headersSent) send(res, code, { error: e.message });
       else res.end();
     });
@@ -77,6 +118,15 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     const p = url.pathname;
     let m;
     if (p === '/api/events') return events(req, res);
+    // the sound engine: whether it's installed and how it is; start it for a project; transport and test tone
+    if (p === '/api/daw' && req.method === 'GET') return send(res, 200, { available: existsSync(process.env.MFX_DAW_ENGINE || enginePaths(root).bin), state: daw?.state || 'stopped', project: dawProject, device: dawDevice, log: daw?.log || [] });
+    if (p === '/api/daw/start' && req.method === 'POST') { const b = await json(req); return send(res, 200, await dawStart(String(b.project || ''))); }
+    if (p === '/api/daw/command' && req.method === 'POST') {
+      const b = await json(req);
+      if (!BROWSER_COMMANDS.has(b.cmd)) return send(res, 403, { error: `the browser can't send ${b.cmd}` });
+      if (!daw || daw.state !== 'running') return send(res, 409, { error: 'the sound engine isn\'t running' });
+      return send(res, 200, await daw.call(b.cmd, b.args || {}));
+    }
     if (p.startsWith('/api/')) return api(req, res, url);
     if ((m = p.match(/^\/files\/([a-z0-9-]+)\/(.+)$/))) return media(req, res, m[1], decodeURIComponent(m[2]), url.searchParams.has('download'));
     return staticFile(res, p);
@@ -110,10 +160,32 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       if ('api_key' in body) writeSecret(root, 'anthropic_api_key', body.api_key ? String(body.api_key).trim() : null);
       return after(studioInfo(root, runner));
     }
+    // MIDI ⇄ Strudel (doc 28): run a pattern's text into notes; turn wanted notes into the smallest text change.
+    if ((m = p.match(/^\/strudel\/(notes|edit)$/)) && method === 'POST') {
+      const body = await json(req);
+      const bars = Math.round(Number(body.bars));
+      if (!(bars >= 1 && bars <= 512)) throw new BadRequest('bars: 1 to 512');
+      if (typeof body.code !== 'string' || body.code.length > 200_000) throw new BadRequest('code: the pattern text');
+      strudel ||= createStrudel({ strudelDir: join(setup.toolsDir(root), 'strudel') });
+      try {
+        if (m[1] === 'notes') return send(res, 200, await strudel.notes(body.code, { bars }));
+        if (!Array.isArray(body.notes) || body.notes.length > 20_000) throw new BadRequest('notes: a list');
+        const notes = body.notes.map((n) => ({ t: Math.round(Number(n.t)), len: Math.max(1, Math.round(Number(n.len))), key: Math.min(127, Math.max(0, Math.round(Number(n.key)))), vel: Math.round(Math.min(1, Math.max(0, Number(n.vel ?? 0.8))) * 1000) / 1000 }));
+        if (notes.some((n) => !Number.isFinite(n.t) || !Number.isFinite(n.len) || !Number.isFinite(n.key) || !Number.isFinite(n.vel))) throw new BadRequest('notes: t, len, key, vel numbers');
+        return send(res, 200, await strudel.edit(body.code, notes, { bars }));
+      } catch (e) {
+        if (e instanceof BadRequest) throw e;
+        return send(res, 400, { error: e.message, line: e.line ?? null });
+      }
+    }
     if (p.startsWith('/voice')) return voiceApi(root, req, res, url, p, method, after);
     // Setup: what each part is for, where it stands, and installing a tool (one at a time, log kept for the page).
     if (p === '/setup' && method === 'GET') return send(res, 200, await setupInfo(root, installs));
     if (p === '/setup/music' && method === 'PUT') { setup.saveMusic(root, await json(req)); return after(await setupInfo(root, installs)); }
+    // The studio browser: its address can be set here; its start command only from the terminal (mortiflix setup browser).
+    if (p === '/setup/browser' && method === 'PUT') { setup.saveBrowser(root, { cdpUrl: (await json(req)).cdpUrl ?? null }); return after(await setupInfo(root, installs)); }
+    if (p === '/setup/browser/check' && method === 'GET') return send(res, 200, await setup.browserCheck(root));
+    if (p === '/setup/daw' && method === 'PUT') { setup.saveDaw(root, (await json(req)).daw ?? null); return after(await setupInfo(root, installs)); }
     if (p === '/setup/assets' && method === 'PUT') { setup.saveAssetSites(root, (await json(req)).sites); return after(await setupInfo(root, installs)); }
     if (p === '/setup/publish' && method === 'PUT') { const b = await json(req); pub.savePublish(root, { service: b.service, profile: b.profile }); return after(await setupInfo(root, installs)); }
     if (p === '/setup/recordings' && method === 'PUT') { setup.browserHarnessRecordings(Boolean((await json(req)).enable)); return after(await setupInfo(root, installs)); }
@@ -121,13 +193,20 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       if (!loopback) throw new BadRequest('Blender opens on the studio\'s own screen: use mortiflix blender there');
       return send(res, 200, { path: setup.openBlender(root) });
     }
+    if (p === '/setup/craft' && method === 'PUT') { craft.saveCraftApps(root, (await json(req)).apps || []); return after(await setupInfo(root, installs)); }
+    if ((m = p.match(/^\/setup\/craft\/([a-z]+)\/(open|remove)$/)) && method === 'POST') {
+      if (m[2] === 'remove') { craft.removeApp(root, m[1]); return after(await setupInfo(root, installs)); }
+      if (!loopback) throw new BadRequest('the Craft apps open on the studio\'s own screen: use mortiflix craft open there');
+      return send(res, 200, { path: craft.openApp(root, m[1]) });
+    }
     if ((m = p.match(/^\/setup\/install\/([a-z-]+)$/)) && method === 'POST') {
       const tool = m[1];
       if (!setup.TOOLS.includes(tool)) throw new BadRequest(`unknown tool (${setup.TOOLS.join(', ')})`);
       if ([...installs.values()].some((j) => j.state === 'running')) throw new BadRequest('another install is running: wait for it to finish');
       const job = { state: 'running', log: [], started_at: new Date().toISOString() };
       installs.set(tool, job);
-      setup.installTool(root, tool, { log: (l) => { job.log.push(l); if (job.log.length > 400) job.log.splice(0, job.log.length - 400); } })
+      // the sound engine has no release build yet: the page builds it from source
+      setup.installTool(root, tool, { build: tool === 'daw-engine', log: (l) => { job.log.push(l); if (job.log.length > 400) job.log.splice(0, job.log.length - 400); } })
         .then((r) => { job.state = 'done'; job.result = r; }, (e) => { job.state = 'failed'; job.error = e.message; })
         .finally(() => changed());
       return send(res, 202, { tool, state: job.state });
@@ -149,6 +228,18 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     }
     if (p === '/pipelines' && method === 'GET') {
       return send(res, 200, listPipelines(root).map(({ dir, ...x }) => x));
+    }
+    if ((m = p.match(/^\/pipelines\/([a-z0-9_-]+)\/preset$/)) && method === 'POST') {
+      const b = await json(req);
+      return after(savePreset(root, m[1], { name: b.name, description: b.description, defaults: b.defaults || {}, replace: Boolean(b.replace) }));
+    }
+    // The transition library (remotion-transitions), for picking a transition on the canvas.
+    if (p === '/transitions' && method === 'GET') {
+      const st = setup.transitionsStatus(root);
+      if (!st.ok) return send(res, 200, { installed: false, families: [], transitions: [] });
+      const cat = readJson(join(st.path, 'catalog.json'));
+      return send(res, 200, { installed: true, families: cat.families || [],
+        transitions: (cat.transitions || []).map((t) => ({ id: t.id, name: t.name, summary: t.summary, family: t.family, subfamily: t.subfamily, uses: t.uses || [], structure: t.facets?.structure || null })) });
     }
     if (p === '/checks' && method === 'GET') return send(res, 200, readJson(paths(root).checks));
     if ((m = p.match(/^\/checks\/([a-z0-9-]+)$/)) && method === 'POST') {
@@ -183,7 +274,24 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     if (sub === '/resume' && method === 'POST') { gates.resume(root, id); return after(); }
     if (sub === '/cancel' && method === 'POST') { gates.cancel(root, id); runner.stopProject(id); return after(); }
     if ((m = sub.match(/^\/reviews\/([a-z0-9_-]+)\/(\d+)$/)) && method === 'POST') {
-      return after(gates.respond(root, id, m[1], Number(m[2]), await json(req)));
+      const out = gates.respond(root, id, m[1], Number(m[2]), await json(req));
+      // Edit the video: the studio builds the Mortiflix Studio project itself, right away (no session, no cost).
+      if (out.verdict === 'edit') makeEdit(id);
+      return after(out);
+    }
+    // The project's skills file, as a list (fresh), and one skill's SKILL.md from the record.
+    if (sub === '/skills' && method === 'GET') return send(res, 200, projectSkills(root, id));
+    if ((m = sub.match(/^\/skills\/([a-z0-9_-]{1,64})$/)) && method === 'GET') {
+      const text = readSkillText(root, id, m[1]);
+      return text === null ? send(res, 404, { error: 'not found' }) : send(res, 200, { name: m[1], text });
+    }
+    if (sub === '/edit' && method === 'GET') return send(res, 200, { job: fcJobs.get(id) || null, map: studioEdit.loadMap(root, id) });
+    if (sub === '/edit/make' && method === 'POST') { makeEdit(id); return after({ started: true }); }
+    if (sub === '/edit/open' && method === 'POST') return after(studioEdit.openInStudio(root, id));
+    if (sub === '/edit/render' && method === 'POST') { renderEdit(id); return after({ started: true }); }
+    if (sub === '/edit/selection' && method === 'GET') {
+      try { return send(res, 200, await studioEdit.studioSelection(root, id, { timeoutMs: 3000 })); }
+      catch (e) { return send(res, 200, { open: false, selected: [], error: e.message }); }
     }
     if ((m = sub.match(/^\/questions\/([a-z0-9]+)$/)) && method === 'POST') {
       const { answer } = await json(req);
@@ -191,6 +299,16 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     }
     if (sub.startsWith('/booth')) return boothApi(req, res, id, sub, method, after);
     if (sub.startsWith('/music')) return musicApi(req, res, id, sub, method, after, url);
+    // The canvas's project graph (src/canvas.mjs), rebuilt from the session's files on every read.
+    if (sub === '/canvas' && method === 'GET') return send(res, 200, canvasView(root, id));
+    if ((m = sub.match(/^\/canvas\/nodes\/([a-z0-9-]{2,24})$/)) && method === 'POST') {
+      const b = await json(req);
+      const r = nodeAction(root, id, m[1], { action: b.action, text: b.text, bars: b.bars ?? null, part: b.part ?? null, write: Boolean(b.write) });
+      // a Fix on a music section tries the fast path first (doc 28 §4); its first step (holding the edit) runs now,
+      // before the runner can start a session for it
+      if (r?.edit?.kind === 'cue') runFastFix(root, id, r.edit.id).then(() => { changed(); runner.wake(); });
+      return after(canvasView(root, id));
+    }
     return send(res, 404, { error: 'not found' });
   }
 
@@ -230,6 +348,13 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
   // master (raw audio body; a paused project resumes when it was waiting for it), and playing the imported master.
   async function musicApi(req, res, id, sub, method, after, url) {
     if (sub === '/music' && method === 'GET') return send(res, 200, music.musicStatus(root, id));
+    if (sub === '/music/song' && method === 'GET') return send(res, 200, songView(root, id) || { draft: true, song: null });
+    // the owner's own edits to the song (doc 18 §6): always by hand, so they always apply and lock what they touch
+    if (sub === '/music/song/ops' && method === 'POST') {
+      const b = await json(req);
+      const r = await applyOps(root, id, (Array.isArray(b.ops) ? b.ops : []).map((o) => ({ ...o, by: 'hand' })));
+      return after({ rev: r.rev, applied: r.applied.length, refused: r.refused });
+    }
     if (sub === '/music/midi.zip' && method === 'GET') {
       const zip = music.midiPack(root, id);
       const p = loadProject(root, id);
@@ -253,12 +378,42 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     return send(res, 404, { error: 'not found' });
   }
 
+  // Mortiflix Studio projects being made, one job per project (a few seconds of ffmpeg and mortiflix-studio-cli).
+  const fcJobs = new Map();
+  function makeEdit(id) {
+    if (fcJobs.get(id)?.state === 'making') return;
+    const job = { kind: 'make', state: 'making', log: [], started_at: new Date().toISOString() };
+    fcJobs.set(id, job);
+    changed();
+    setImmediate(() => {
+      try {
+        const map = studioEdit.makeEditProject(root, id, { log: (l) => job.log.push(l) });
+        Object.assign(job, { state: 'ready', fcproj: map.fcproj, clips: map.clips.length });
+      } catch (e) { Object.assign(job, { state: 'failed', error: e.message }); }
+      changed();
+    });
+  }
+
+  // The big render out of Mortiflix Studio, then the delivery.
+  function renderEdit(id) {
+    if (fcJobs.get(id)?.state === 'rendering') return;
+    const job = { kind: 'render', state: 'rendering', log: [], started_at: new Date().toISOString() };
+    fcJobs.set(id, job);
+    changed();
+    studioEdit.renderFromEdit(root, id, { onLine: (l) => { job.log.push(l); if (job.log.length > 200) job.log.shift(); } })
+      .then((file) => { const r = gates.deliverEdited(root, id, file); Object.assign(job, { state: 'delivered', file: r.delivered }); })
+      .catch((e) => Object.assign(job, { state: 'failed', error: e.message }))
+      .finally(() => changed());
+  }
+
   // Files from a project's record (what was submitted, the deliverables). Range requests for video and audio.
   function media(req, res, id, rel, download) {
-    // Only the submitted files: checked on the resolved path, so encoded ../ can't climb out of reviews/.
-    const base = realpathSync(join(projectPaths(root, id).state, 'reviews'));
-    const file = resolve(base, rel.replace(/^reviews\//, ''));
-    if (!rel.startsWith('reviews/') || !isInside(base, file) || file === base || !existsSync(file)) return send(res, 404, { error: 'not found' });
+    // Only the submitted files and the canvas's snapshots: checked on the resolved path, so encoded ../ can't climb out.
+    const area = rel.startsWith('reviews/') ? 'reviews' : rel.startsWith('canvas/media/') ? 'canvas/media' : null;
+    if (!area || !existsSync(join(projectPaths(root, id).state, area))) return send(res, 404, { error: 'not found' });
+    const base = realpathSync(join(projectPaths(root, id).state, area));
+    const file = resolve(base, rel.slice(area.length + 1));
+    if (!isInside(base, file) || file === base || !existsSync(file)) return send(res, 404, { error: 'not found' });
     const real = realpathSync(file);
     if (!isInside(base, real)) return send(res, 404, { error: 'not found' });
     const st = statSync(real);
@@ -317,6 +472,8 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
   }
   const close = async () => {
     for (const c of clients) c.end();
+    strudel?.close();
+    await daw?.stop();
     if (withRunner) { await runner.stop(); await loop; runner.release(); }
     await new Promise((ok) => server.close(ok));
   };
@@ -329,8 +486,8 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
 
 class BadRequest extends Error {}
 
-// Narration setup: the engine, ElevenLabs (account, models, voices, Voice Library, dictionaries, a test line) and
-// local Qwen3-TTS through ComfyUI. Calls to ElevenLabs happen only when the page asks.
+// Narration setup: the engine and ElevenLabs (account, models, voices, Voice Library, dictionaries, a test line). No
+// local voice (removed 2026-11-01). Calls to ElevenLabs happen only when the page asks.
 async function voiceApi(root, req, res, url, p, method, after) {
   const q = (k) => url.searchParams.get(k) || undefined;
   const client = () => {
@@ -374,10 +531,6 @@ async function voiceApi(root, req, res, url, p, method, after) {
     res.writeHead(200, { 'content-type': r.headers.get('content-type') || 'audio/mpeg', 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' });
     return res.end(Buffer.from(await r.arrayBuffer()));
   }
-  if (p === '/voice/qwen/status' && method === 'GET') {
-    const cfg = voice.voiceConfig(root).qwen;
-    return send(res, 200, await new voice.qwen.ComfyUI({ url: q('url') || cfg.url }).status());
-  }
   if (p === '/voice/sample' && method === 'POST') {
     const { engine, text } = await json(req);
     const line = String(text || '').trim().slice(0, 300) || 'This is how your narration will sound.';
@@ -385,15 +538,11 @@ async function voiceApi(root, req, res, url, p, method, after) {
     if (engine === 'elevenlabs') {
       if (!cfg.elevenlabs.voice_id) throw new BadRequest('choose a voice first');
       const out = await wrap(() => client().sample(cfg.elevenlabs, line));
+      record(root, { provider: 'elevenlabs', kind: 'tts sample', stage: 'voice', model: cfg.elevenlabs.model_id, credits: ttsCredits(cfg.elevenlabs.model_id, out.characters) });
       res.writeHead(200, { 'content-type': 'audio/mpeg', 'x-characters': String(out.characters), 'cache-control': 'no-store' });
       return res.end(out.audio);
     }
-    if (engine === 'qwen') {
-      const out = await wrap(() => new voice.qwen.ComfyUI({ url: cfg.qwen.url }).sample(cfg.qwen, line));
-      res.writeHead(200, { 'content-type': out.format === 'wav' ? 'audio/wav' : out.format === 'mp3' ? 'audio/mpeg' : 'audio/flac', 'cache-control': 'no-store' });
-      return res.end(out.audio);
-    }
-    throw new BadRequest('engine must be elevenlabs or qwen');
+    throw new BadRequest('engine must be elevenlabs');
   }
   return send(res, 404, { error: 'not found' });
 }
@@ -432,7 +581,7 @@ function json(req, limit = 2_000_000) {
 async function setupInfo(root, installs) {
   const status = await setup.setupStatus(root);
   const jobs = Object.fromEntries([...installs].map(([k, j]) => [k, { state: j.state, log: j.log.slice(-60), error: j.error || null, problems: j.result?.problems || null }]));
-  return { parts: setup.PARTS, status, tools: setup.TOOL_INFO, addons: setup.ADDONS.map(({ id, name, about, owner }) => ({ id, name, about, owner: Boolean(owner) })),
+  return { parts: setup.PARTS, status, tools: setup.TOOL_INFO, daws: setup.DAWS, browser: setup.browserConfig(loadConfig(root)), addons: setup.ADDONS.map(({ id, name, about, owner }) => ({ id, name, about, owner: Boolean(owner) })),
     recordings: setup.browserHarnessRecordings() || null, jobs };
 }
 
@@ -452,7 +601,7 @@ function studioInfo(root, runner) {
     api_key_set: Boolean(readSecret(root, 'anthropic_api_key')),
     api_key_env: Boolean(process.env.ANTHROPIC_API_KEY),
     session_env: existsSync(paths(root).sessionEnv),
-    runner: runner.current ? { project: runner.current.projectId, session: runner.current.sessionId } : null,
+    runner: runner.current ? { project: runner.current.projectId, session: runner.current.sessionId, sessions: [...runner.running.values()].map((r) => ({ project: r.projectId, session: r.sessionId })) } : null,
     checks_proposed: checks.proposed.length,
   };
 }

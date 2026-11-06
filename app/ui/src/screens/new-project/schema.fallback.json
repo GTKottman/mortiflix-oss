@@ -1,0 +1,640 @@
+{
+  "version": 1,
+  "required": ["idea"],
+  "top": {
+    "idea": {
+      "type": "long",
+      "label": "What should your video be about?",
+      "required": true,
+      "max": 20000,
+      "help": "The only required input. The idea, who it is for, and the one thing a viewer should remember."
+    },
+    "title": { "type": "text", "label": "Project name", "default": "" },
+    "sources": { "type": "ids", "label": "Source tray", "help": "Ids from sources.add, in this draft." }
+  },
+  "quick": ["delivery.destination", "delivery.duration"],
+  "sections": [
+    {
+      "id": "story",
+      "label": "Story & research",
+      "summary": "Audience, tone, research, structure and what must or must not be said",
+      "fields": [
+        {
+          "id": "story.audience",
+          "section": "story",
+          "label": "Target audience",
+          "type": "text",
+          "default": "",
+          "help": "Who is watching, in a few words.",
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.knowledge_level",
+          "section": "story",
+          "label": "Viewer knowledge",
+          "type": "choice",
+          "default": "auto",
+          "choices": [
+            { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+            { "value": "newcomer", "label": "Newcomer", "hint": "has never heard of it" },
+            { "value": "some", "label": "Some knowledge" },
+            { "value": "informed", "label": "Informed" },
+            { "value": "expert", "label": "Expert" }
+          ],
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.objective",
+          "section": "story",
+          "label": "Video objective",
+          "type": "choice",
+          "default": "auto",
+          "choices": [
+            { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+            { "value": "educate", "label": "Educate" },
+            { "value": "entertain", "label": "Entertain" },
+            { "value": "persuade", "label": "Persuade" },
+            { "value": "explain", "label": "Explain" },
+            { "value": "sell", "label": "Sell" }
+          ],
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.tone",
+          "section": "story",
+          "label": "Tone and personality",
+          "type": "multi",
+          "custom": true,
+          "default": [],
+          "choices": [
+            { "value": "serious", "label": "Serious" },
+            { "value": "humorous", "label": "Humorous" },
+            { "value": "cinematic", "label": "Cinematic" },
+            { "value": "investigative", "label": "Investigative" },
+            { "value": "warm", "label": "Warm" },
+            { "value": "energetic", "label": "Energetic" }
+          ],
+          "help": "Pick any, or add your own words.",
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.depth",
+          "section": "story",
+          "label": "Explanation depth",
+          "type": "choice",
+          "default": "auto",
+          "choices": [
+            { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+            { "value": "beginner", "label": "Beginner" },
+            { "value": "intermediate", "label": "Intermediate" },
+            { "value": "advanced", "label": "Advanced" },
+            { "value": "expert", "label": "Technical expert" }
+          ],
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.hook",
+          "section": "story",
+          "label": "Opening hook",
+          "type": "choice",
+          "custom": true,
+          "default": "auto",
+          "choices": [
+            { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+            { "value": "question", "label": "A question" },
+            { "value": "bold_claim", "label": "A bold claim" },
+            { "value": "story", "label": "A short story" },
+            { "value": "surprising_fact", "label": "A surprising fact" },
+            { "value": "problem", "label": "The problem" },
+            { "value": "cold_open", "label": "Cold open" }
+          ],
+          "used_by": ["script"]
+        },
+        {
+          "id": "story.cta",
+          "section": "story",
+          "label": "Call to action",
+          "type": "text",
+          "default": "",
+          "help": "What the viewer should do at the end. Empty = none.",
+          "used_by": ["script"]
+        },
+        {
+          "id": "story.research_depth",
+          "section": "story",
+          "label": "Research depth",
+          "type": "choice",
+          "default": "standard",
+          "choices": [
+            { "value": "quick", "label": "Quick", "hint": "check what you are unsure of" },
+            { "value": "standard", "label": "Standard" },
+            { "value": "investigative", "label": "Investigative", "hint": "cross-check every claim" }
+          ],
+          "help": "Changing this never starts research by itself.",
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.preferred_sources",
+          "section": "story",
+          "label": "Preferred sources",
+          "type": "list",
+          "default": [],
+          "help": "Sites, papers or people to trust first.",
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.citations",
+          "section": "story",
+          "label": "Citations",
+          "type": "choice",
+          "default": "none",
+          "choices": [
+            { "value": "none", "label": "None" },
+            { "value": "end_card", "label": "Sources end card" },
+            { "value": "on_screen", "label": "On screen where claimed" }
+          ],
+          "used_by": ["script"]
+        },
+        {
+          "id": "story.verification",
+          "section": "story",
+          "label": "Fact verification",
+          "type": "choice",
+          "default": "standard",
+          "choices": [
+            { "value": "light", "label": "Light" },
+            { "value": "standard", "label": "Standard" },
+            { "value": "strict", "label": "Strict", "hint": "every number and name checked" }
+          ],
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.structure",
+          "section": "story",
+          "label": "Story structure",
+          "type": "choice",
+          "custom": true,
+          "default": "auto",
+          "choices": [
+            { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+            { "value": "documentary", "label": "Documentary" },
+            { "value": "explainer", "label": "Explainer" },
+            { "value": "countdown", "label": "Countdown" },
+            { "value": "narrative", "label": "Narrative" }
+          ],
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.must_include",
+          "section": "story",
+          "label": "Mandatory facts",
+          "type": "list",
+          "default": [],
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.excluded_claims",
+          "section": "story",
+          "label": "Excluded claims",
+          "type": "list",
+          "default": [],
+          "used_by": ["brief", "script"]
+        },
+        {
+          "id": "story.forbidden_topics",
+          "section": "story",
+          "label": "Forbidden topics",
+          "type": "list",
+          "default": [],
+          "used_by": ["brief", "script"]
+        }
+      ]
+    },
+    {
+      "id": "visual",
+      "label": "Visual direction",
+      "summary": "Style, brand, motion, assets, captions and safe zones (all visuals are drawn in code)",
+      "fields": [
+        {
+          "id": "visual.style",
+          "section": "visual",
+          "label": "Visual style",
+          "type": "object",
+          "default": { "preset": "auto", "custom": "" },
+          "parts": [
+            {
+              "key": "preset",
+              "type": "choice",
+              "choices": [
+                { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+                { "value": "editorial", "label": "Editorial" },
+                { "value": "kinetic_typography", "label": "Kinetic typography" },
+                { "value": "3d", "label": "3D" },
+                { "value": "minimalist", "label": "Minimalist" },
+                { "value": "custom", "label": "Custom" }
+              ]
+            },
+            {
+              "key": "custom",
+              "type": "text",
+              "help": "Your own words for the style (used when preset is custom)."
+            }
+          ],
+          "used_by": ["stills", "look"]
+        },
+        {
+          "id": "visual.brand",
+          "section": "visual",
+          "label": "Brand kit",
+          "type": "object",
+          "default": { "preset": "", "colors": [], "heading_font": "", "body_font": "", "logo_source": "" },
+          "parts": [
+            { "key": "preset", "type": "text", "help": "A saved identity preset (slug)." },
+            { "key": "colors", "type": "list", "help": "Hex colours, e.g. #7c5cff." },
+            { "key": "heading_font", "type": "text" },
+            { "key": "body_font", "type": "text" },
+            { "key": "logo_source", "type": "text", "help": "Id of a source in the tray that is the logo." }
+          ],
+          "used_by": ["stills", "look"]
+        },
+        {
+          "id": "visual.motion_intensity",
+          "section": "visual",
+          "label": "Motion intensity",
+          "type": "choice",
+          "default": "balanced",
+          "choices": [
+            { "value": "calm", "label": "Calm", "hint": "slow drifts and long holds" },
+            { "value": "balanced", "label": "Balanced", "hint": "something moves on every beat" },
+            { "value": "lively", "label": "Lively", "hint": "quick pushes and wipes" },
+            { "value": "intense", "label": "Intense", "hint": "constant movement and hard cuts" }
+          ],
+          "used_by": ["stills"]
+        },
+        {
+          "id": "visual.animation_complexity",
+          "section": "visual",
+          "label": "Animation complexity",
+          "type": "choice",
+          "default": "standard",
+          "choices": [
+            { "value": "simple", "label": "Simple", "hint": "type and shapes only" },
+            { "value": "standard", "label": "Standard", "hint": "layered scenes" },
+            { "value": "rich", "label": "Rich", "hint": "many moving parts per scene" }
+          ],
+          "used_by": ["stills"]
+        },
+        {
+          "id": "visual.asset_strategy",
+          "section": "visual",
+          "label": "Asset strategy",
+          "type": "object",
+          "default": { "source": "both", "precedence": "uploaded_first", "rights_confirmed": false },
+          "parts": [
+            {
+              "key": "source",
+              "type": "choice",
+              "choices": [
+                { "value": "uploaded", "label": "Uploaded assets only" },
+                {
+                  "value": "drawn",
+                  "label": "Code-drawn visuals only",
+                  "hint": "drawn in code, never an AI image model"
+                },
+                { "value": "both", "label": "Both" }
+              ]
+            },
+            {
+              "key": "precedence",
+              "type": "choice",
+              "choices": [
+                { "value": "uploaded_first", "label": "Uploaded assets win" },
+                { "value": "drawn_first", "label": "Drawn visuals win" }
+              ]
+            },
+            {
+              "key": "rights_confirmed",
+              "type": "bool",
+              "help": "I have the rights to use the uploaded files."
+            }
+          ],
+          "used_by": ["stills"]
+        },
+        {
+          "id": "visual.captions",
+          "section": "visual",
+          "label": "Captions and on-screen type",
+          "type": "object",
+          "default": { "mode": "auto", "style": "clean" },
+          "parts": [
+            {
+              "key": "mode",
+              "type": "choice",
+              "choices": [
+                { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+                { "value": "on", "label": "On" },
+                { "value": "off", "label": "Off" }
+              ]
+            },
+            {
+              "key": "style",
+              "type": "choice",
+              "custom": true,
+              "choices": [
+                { "value": "clean", "label": "Clean" },
+                { "value": "bold", "label": "Bold" },
+                { "value": "word_by_word", "label": "Word by word" }
+              ]
+            }
+          ],
+          "used_by": []
+        },
+        {
+          "id": "visual.safe_zones",
+          "section": "visual",
+          "label": "Platform safe zones",
+          "type": "choice",
+          "default": "auto",
+          "choices": [
+            { "value": "auto", "label": "Auto", "hint": "follows the destination" },
+            { "value": "on", "label": "Always keep text inside" },
+            { "value": "off", "label": "Off" }
+          ],
+          "used_by": []
+        }
+      ]
+    },
+    {
+      "id": "voice",
+      "label": "Voice & sound",
+      "summary": "Starting preferences, refined later in Voice & Music. Decide later is fine.",
+      "fields": [
+        {
+          "id": "voice.voice",
+          "section": "voice",
+          "label": "Voice",
+          "type": "object",
+          "decide_later": true,
+          "default": { "language": "English", "accent": "", "delivery": "auto", "pacing": "natural" },
+          "parts": [
+            { "key": "language", "type": "text" },
+            { "key": "accent", "type": "text" },
+            {
+              "key": "delivery",
+              "type": "choice",
+              "custom": true,
+              "choices": [
+                { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+                { "value": "conversational", "label": "Conversational" },
+                { "value": "calm", "label": "Calm" },
+                { "value": "energetic", "label": "Energetic" },
+                { "value": "dramatic", "label": "Dramatic" }
+              ]
+            },
+            {
+              "key": "pacing",
+              "type": "choice",
+              "choices": [
+                { "value": "slow", "label": "Slow" },
+                { "value": "natural", "label": "Natural" },
+                { "value": "brisk", "label": "Brisk" }
+              ]
+            }
+          ],
+          "help": "Starting preferences. The ElevenLabs voice is picked later in Voice & Music.",
+          "used_by": []
+        },
+        {
+          "id": "voice.music",
+          "section": "voice",
+          "label": "Music",
+          "type": "object",
+          "decide_later": true,
+          "default": { "genre": "", "mood": "", "energy": "auto", "instrumentation": "" },
+          "parts": [
+            { "key": "genre", "type": "text" },
+            { "key": "mood", "type": "text" },
+            {
+              "key": "energy",
+              "type": "choice",
+              "choices": [
+                { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+                { "value": "low", "label": "Low" },
+                { "value": "medium", "label": "Medium" },
+                { "value": "high", "label": "High" }
+              ]
+            },
+            { "key": "instrumentation", "type": "text" }
+          ],
+          "help": "Music is made with ElevenLabs, with your OK on the cost first.",
+          "used_by": []
+        },
+        {
+          "id": "voice.sound_design",
+          "section": "voice",
+          "label": "Sound design",
+          "type": "object",
+          "decide_later": true,
+          "default": { "intensity": "subtle", "transitions": "auto" },
+          "parts": [
+            {
+              "key": "intensity",
+              "type": "choice",
+              "choices": [
+                { "value": "none", "label": "None" },
+                { "value": "subtle", "label": "Subtle" },
+                { "value": "moderate", "label": "Moderate" },
+                { "value": "rich", "label": "Rich" }
+              ]
+            },
+            {
+              "key": "transitions",
+              "type": "choice",
+              "custom": true,
+              "choices": [
+                { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+                { "value": "cut", "label": "Plain cuts" },
+                { "value": "whoosh", "label": "Whooshes" },
+                { "value": "hit", "label": "Hits" }
+              ]
+            }
+          ],
+          "used_by": []
+        },
+        {
+          "id": "voice.pauses",
+          "section": "voice",
+          "label": "Pauses and silence",
+          "type": "object",
+          "decide_later": true,
+          "default": { "narrative_pauses": "auto", "silence": "" },
+          "parts": [
+            {
+              "key": "narrative_pauses",
+              "type": "choice",
+              "choices": [
+                { "value": "auto", "label": "Auto", "hint": "the studio decides from the topic" },
+                { "value": "fewer", "label": "Fewer" },
+                { "value": "more", "label": "More" }
+              ]
+            },
+            { "key": "silence", "type": "text", "help": "Where to leave intentional silence, in your words." }
+          ],
+          "used_by": []
+        }
+      ]
+    },
+    {
+      "id": "delivery",
+      "label": "Delivery settings",
+      "summary": "Where it plays, shapes, length and output quality",
+      "fields": [
+        {
+          "id": "delivery.destination",
+          "section": "delivery",
+          "label": "Destination",
+          "type": "choice",
+          "default": "youtube",
+          "choices": [
+            { "value": "youtube", "label": "YouTube" },
+            { "value": "tiktok", "label": "TikTok" },
+            { "value": "reels", "label": "Reels" },
+            { "value": "presentation", "label": "Presentation" },
+            { "value": "website", "label": "Website" }
+          ],
+          "help": "Recommends a shape and length. It never changes your picks.",
+          "used_by": ["script"]
+        },
+        {
+          "id": "delivery.aspects",
+          "section": "delivery",
+          "label": "Aspect ratios",
+          "type": "multi",
+          "default": ["16:9"],
+          "choices": [
+            { "value": "16:9", "label": "16:9" },
+            { "value": "9:16", "label": "9:16" },
+            { "value": "1:1", "label": "1:1" },
+            { "value": "4:5", "label": "4:5" }
+          ],
+          "help": "Each ratio is one more deliverable. The first is the one the video is designed for.",
+          "used_by": ["look", "stills"]
+        },
+        {
+          "id": "delivery.duration",
+          "section": "delivery",
+          "label": "Duration",
+          "type": "object",
+          "default": { "mode": "auto", "seconds": null },
+          "parts": [
+            {
+              "key": "mode",
+              "type": "choice",
+              "choices": [
+                { "value": "auto", "label": "Auto", "hint": "the topic sets the length" },
+                { "value": "manual", "label": "Set a length" }
+              ]
+            },
+            { "key": "seconds", "type": "number", "min": 5, "max": 3600 }
+          ],
+          "used_by": ["script", "voice"]
+        },
+        {
+          "id": "delivery.output",
+          "section": "delivery",
+          "label": "Resolution, frame rate and quality",
+          "type": "object",
+          "default": { "resolution": "1080p", "fps": 30, "quality": "standard" },
+          "parts": [
+            {
+              "key": "resolution",
+              "type": "choice",
+              "choices": [
+                { "value": "720p", "label": "720p" },
+                { "value": "1080p", "label": "1080p" },
+                { "value": "1440p", "label": "1440p" },
+                { "value": "2160p", "label": "4K" }
+              ]
+            },
+            {
+              "key": "fps",
+              "type": "choice",
+              "choices": [
+                { "value": 24, "label": "24" },
+                { "value": 30, "label": "30" },
+                { "value": 60, "label": "60" }
+              ]
+            },
+            {
+              "key": "quality",
+              "type": "choice",
+              "choices": [
+                { "value": "draft", "label": "Draft" },
+                { "value": "standard", "label": "Standard" },
+                { "value": "high", "label": "High" }
+              ]
+            }
+          ],
+          "unsupported": [{ "resolution": "2160p", "fps": 60 }],
+          "used_by": []
+        }
+      ]
+    },
+    {
+      "id": "workflow",
+      "label": "Production workflow",
+      "summary": "Where the studio stops for your approval",
+      "fields": [
+        {
+          "id": "workflow.checkpoints",
+          "section": "workflow",
+          "label": "Approval checkpoints",
+          "type": "multi",
+          "default": ["script", "voice_music", "look", "stills", "motion", "sound", "final"],
+          "choices": [
+            {
+              "value": "outline",
+              "label": "Outline",
+              "hint": "generate and review an outline before the script"
+            },
+            { "value": "script", "label": "Script" },
+            { "value": "voice_music", "label": "Voice and music" },
+            { "value": "look", "label": "Look" },
+            { "value": "stills", "label": "Stills" },
+            { "value": "motion", "label": "Motion" },
+            { "value": "sound", "label": "Sound" },
+            { "value": "final", "label": "Final export" }
+          ],
+          "used_by": []
+        }
+      ]
+    }
+  ],
+  "checkpoints": [
+    {
+      "value": "outline",
+      "label": "Outline",
+      "hint": "generate and review an outline before the script",
+      "gate": null
+    },
+    { "value": "script", "label": "Script", "gate": "script" },
+    { "value": "voice_music", "label": "Voice and music", "gate": "voice" },
+    { "value": "look", "label": "Look", "gate": "style-frames" },
+    { "value": "stills", "label": "Stills", "gate": "stills" },
+    { "value": "motion", "label": "Motion", "gate": "animatic" },
+    { "value": "sound", "label": "Sound", "gate": "sound" },
+    { "value": "final", "label": "Final export", "gate": "artcraft" }
+  ],
+  "decide_later": ["voice", "music", "sound_design", "pauses"],
+  "stored_only": [
+    "visual.captions",
+    "visual.safe_zones",
+    "voice.voice",
+    "voice.music",
+    "voice.sound_design",
+    "voice.pauses",
+    "delivery.output",
+    "workflow.checkpoints"
+  ],
+  "source_kinds": ["url", "pdf", "docx", "text", "image", "video", "audio", "other"]
+}

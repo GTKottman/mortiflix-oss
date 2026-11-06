@@ -56,7 +56,8 @@ export function hapsToChannels({ haps, cps, beatsPerCycle = 4, names = {} }) {
       continue;
     }
     if (pitch < 0 || pitch > 127) { problems.push(`pitch ${pitch} on channel ${channel} ${at} (MIDI pitch must be 0-127)`); continue; }
-    const dur = (h.end - h.begin) * beatsPerCycle * clamp(Number(v.legato ?? 1) || 1, 0.05, 8);
+    // .legato(x) is stored by Strudel as `clip` (doc 28 §2.2): read clip first
+    const dur = (h.end - h.begin) * beatsPerCycle * clamp(Number(v.clip ?? v.legato ?? 1) || 1, 0.05, 8);
     if (!(dur > 0)) continue;
     if (!tracks.has(channel)) tracks.set(channel, { channel, name: names[channel] || `CH${String(channel).padStart(2, '0')}`, kind: channel === 10 ? 'drums' : 'pitched', notes: [], sounds: new Set() });
     if (v.s) tracks.get(channel).sounds.add(String(v.s));
@@ -171,4 +172,17 @@ export function intensityChart(report) {
     const spark = report.perBar.slice(s.bars[0] - 1, s.bars[1]).map((b) => ramp[Math.round((b.level / max) * 8)]).join('');
     return `${s.name.slice(0, 28).padEnd(28)} bars ${String(s.bars[0]).padStart(3)}-${String(s.bars[1]).padEnd(3)} asked ${String(s.asked).padStart(2)}  measured ${String(s.measured).padStart(5)}  ${spark}`;
   }).join('\n');
+}
+
+// Each section as a range of beats: [start, end), with its number and name.
+export function sectionRanges(bp) {
+  const bpb = beatsPerBar(bp.meter || '4/4');
+  return (bp.sections || []).map((s, i) => ({ n: i + 1, name: s.name, start: (s.start_bar - 1) * bpb, end: s.end_bar * bpb, bars: s.end_bar - s.start_bar + 1 }));
+}
+
+// A section's notes, moved to start at beat 0 and cut at its end: a clip to drop into a DAW.
+export function clipOf(track, range) {
+  const notes = track.notes.filter((n) => n.start >= range.start - 1e-9 && n.start < range.end - 1e-9)
+    .map((n) => ({ ...n, start: +(n.start - range.start).toFixed(6), dur: +Math.min(n.dur, range.end - n.start).toFixed(6) }));
+  return { ...track, notes };
 }

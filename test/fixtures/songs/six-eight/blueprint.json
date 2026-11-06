@@ -1,0 +1,4 @@
+{ "title": "Six eight", "bpm": 72, "meter": "6/8", "bars": 6, "scale": "D:minor",
+  "sections": [ { "id": "m01", "name": "Lilt", "start_bar": 1, "end_bar": 3, "function": "a rocking figure in two", "intensity": 4 },
+                { "id": "m02", "name": "Lilt again", "start_bar": 4, "end_bar": 6, "function": "the figure answers itself", "intensity": 5 } ],
+  "roles": [ { "channel": 1, "name": "Lead" }, { "channel": 2, "name": "Bass" } ] }

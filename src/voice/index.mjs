@@ -1,25 +1,28 @@
-// The studio's narration setup: which engine (ElevenLabs, local Qwen3-TTS, the owner's own voice, or none) and its settings. The settings
+// The studio's narration setup: which engine (ElevenLabs, the owner's own voice, or none) and its settings. The settings
 // live in config.json under `voice`; the ElevenLabs key lives in secrets.json and reaches only sessions that use it.
+// ElevenLabs is the default and the only generated voice (owner, 2026-11-01: "11 Labs should be the preferred, default
+// and only way to generate audio until a good competitor comes along"; local generation is bloat). There is no local
+// fallback: without a key the Voice stage and Settings say so in plain words. An old config's local engine ("qwen")
+// reads as ElevenLabs.
 import { loadConfig, saveConfig, readSecret, writeSecret, readSessionEnv } from '../studio.mjs';
 import * as eleven from './elevenlabs.mjs';
-import * as qwen from './qwen.mjs';
 
 // own: the owner narrates in their own voice, line by line, in the recording booth (src/booth.mjs).
-export const ENGINES = ['none', 'elevenlabs', 'qwen', 'own'];
+export const ENGINES = ['none', 'elevenlabs', 'own'];
+export const DEFAULT_ENGINE = 'elevenlabs';
 
 export function voiceConfig(root) {
   const v = loadConfig(root).voice || {};
   return {
-    engine: ENGINES.includes(v.engine) ? v.engine : 'none',
+    engine: ENGINES.includes(v.engine) ? v.engine : DEFAULT_ENGINE,
     elevenlabs: { ...eleven.DEFAULTS, ...(v.elevenlabs || {}) },
-    qwen: { ...qwen.DEFAULTS, ...(v.qwen || {}) },
   };
 }
 
 // Merge a change into the voice settings (only known fields, ranges enforced).
 export function saveVoice(root, patch = {}) {
   const cur = voiceConfig(root);
-  const next = { engine: cur.engine, elevenlabs: { ...cur.elevenlabs }, qwen: { ...cur.qwen } };
+  const next = { engine: cur.engine, elevenlabs: { ...cur.elevenlabs } };
   if (patch.engine !== undefined) {
     if (!ENGINES.includes(patch.engine)) throw new Error(`voice engine must be one of ${ENGINES.join(', ')}`);
     next.engine = patch.engine;
@@ -37,15 +40,11 @@ export function saveVoice(root, patch = {}) {
     else if (['use_speaker_boost', 'sfx', 'music'].includes(k)) next.elevenlabs[k] = Boolean(v);
     else next.elevenlabs[k] = v === '' ? null : v === null ? null : String(v).slice(0, 200);
   }
-  for (const [k, v] of Object.entries(patch.qwen || {})) {
-    if (!(k in qwen.DEFAULTS)) continue;
-    if (k === 'check') next.qwen[k] = Boolean(v);
-    else if (k === 'url') { if (/^https?:\/\/[^\s]+$/.test(String(v))) next.qwen[k] = String(v).replace(/\/+$/, ''); }
-    else next.qwen[k] = String(v).slice(0, 1000);
-  }
   saveConfig(root, { voice: next });
   return next;
 }
+
+export const NO_KEY_MESSAGE = 'The voice and music come from ElevenLabs, and no ElevenLabs API key is saved. Add one in Settings › Keys (elevenlabs.io › Developers › API keys). Nothing is spoken until then.';
 
 export function elevenKey(root) {
   return readSecret(root, 'elevenlabs_api_key') || readSessionEnv(root).ELEVENLABS_API_KEY || process.env.ELEVENLABS_API_KEY || null;
@@ -69,16 +68,15 @@ export function sessionVoiceEnv(root) {
 // Everything the setup screens show. Network calls are optional (`live`): the page asks for them separately.
 export function voiceOverview(root) {
   const v = voiceConfig(root);
-  const gpus = qwen.detectGpus();
+  const key = Boolean(readSecret(root, 'elevenlabs_api_key')) ? 'saved' : elevenKey(root) ? 'from the environment' : null;
   return {
     ...v,
-    elevenlabs_key: Boolean(readSecret(root, 'elevenlabs_api_key')) ? 'saved' : elevenKey(root) ? 'from the environment' : null,
-    gpus,
-    local: qwen.recommend(gpus),
-    presets: qwen.PRESETS,
+    elevenlabs_key: key,
+    // what Settings and the Voice stage show when ElevenLabs is the engine and there is no key (never a silent fallback)
+    needs_key: v.engine === 'elevenlabs' && !key ? NO_KEY_MESSAGE : null,
     output_formats: eleven.OUTPUT_FORMATS,
     servers: Object.keys(eleven.SERVERS),
   };
 }
 
-export { eleven, qwen };
+export { eleven };

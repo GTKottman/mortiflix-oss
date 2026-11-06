@@ -82,7 +82,7 @@ from directions v1 has no answer").
 
 ## Renders (`renderq.mjs`)
 
-Heavy work (Remotion, anything that starts Chrome or the GPU) goes through `mfx render`, which queues it studio-wide
+Heavy work (Kinetograph renders and stills, anything that starts Chrome or the GPU) goes through `mfx render`, which queues it studio-wide
 and returns an id at once; `mfx render-wait <id>` waits up to a timeout. No tool call blocks for longer than a
 backend allows, and two renders never fight for memory. While a render waits or runs, you see "Waiting to render"
 or "Rendering: <label>".
@@ -106,8 +106,8 @@ Adding a backend is adding a module with those two functions to `BACKENDS` in `r
 ## Setup (`src/setup.mjs`)
 
 The parts of setup (Claude, narration, music, assets, 3D), each tool's detection and installer (`strudel`, `chrome`,
-`browser-harness`, `blender`, `blender-addons`, `comfyui`), and the owner's choices in `config.json` (`music`,
-`assets.sites`, `tools.*` paths). `setupStatus` (async: it asks ComfyUI) feeds the walkthrough and the page;
+`browser-harness`, `blender`, `blender-addons`; no local AI models since 2026-11-01), and the owner's choices in `config.json` (`music`,
+`assets.sites`, `tools.*` paths). `setupStatus` feeds the walkthrough and the page;
 `setupStatusSync` feeds the session brief's "This studio" section. `sessionToolsEnv` gives sessions `MFX_STRUDEL`,
 `MFX_CHROME`, `MFX_BLENDER` (+ `BLENDER_USER_RESOURCES`, `MFX3D`), `MFX_MUSIC` and `MFX_ASSETS`. Studio skills that
 depend on setup (`harness/skills/blender-3d`, `harness/skills/assets`, the toolkits' own skills, browser-harness's)
@@ -142,12 +142,11 @@ asks, and `publish` sends it to Upload-Post as one form with an `Idempotency-Key
 
 ## Narration (`src/voice/`)
 
-`voice/index.mjs` holds the studio's choice (`config.json` › `voice`: `none`, `elevenlabs`, `qwen` or `own`) and hands a
+`voice/index.mjs` holds the studio's choice (`config.json` › `voice`: `elevenlabs` (the default), `own` or `none`; an old `qwen` reads as `elevenlabs`) and hands a
 session `MFX_VOICE` (the settings) plus `ELEVENLABS_API_KEY` only when ElevenLabs is the engine.
 `voice/elevenlabs.mjs` talks to ElevenLabs for setup (account, models, voices, Voice Library, dictionaries, a test
 line) and builds every text-to-speech request so it carries only what the chosen model takes (Eleven v4: stability and
-similarity only). `voice/qwen.mjs` detects the GPU, reads the installed ComfyUI nodes (models, voices, runtime modes)
-and builds the speak and listen graphs. Sessions narrate with the voiceover skill's `vo.mjs`, which imports these
+similarity only). There is no local voice (Qwen3-TTS, ComfyUI) since 2026-11-01. Sessions narrate with the voiceover skill's `vo.mjs`, which imports these
 modules (`MFX_HOME`), and make effects and music beds with `sound.mjs`. See [VOICE.md](VOICE.md).
 
 **The recording booth** (`src/booth.mjs`) is the `own` engine: the owner reads the session's `voice/lines.json`. Every

@@ -1,16 +1,16 @@
-// Narration: the ElevenLabs and ComfyUI clients, the settings rules, and vo.mjs end to end against fake APIs
+// Narration: the ElevenLabs and ComfyUI clients, the local Qwen3-TTS runner, the settings rules, and vo.mjs end to end against fake APIs
 // (loaded into its process with --import): no network, no key, no GPU.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { tempStudio } from './helpers.mjs';
 import { requestBody, voiceSettings, ElevenLabs } from '../src/voice/elevenlabs.mjs';
-import { recommend, ComfyUI, speakGraph } from '../src/voice/qwen.mjs';
-import { saveVoice, voiceConfig, sessionVoiceEnv, setElevenKey } from '../src/voice/index.mjs';
+import { saveVoice, voiceConfig, sessionVoiceEnv, setElevenKey, voiceOverview, ENGINES, NO_KEY_MESSAGE } from '../src/voice/index.mjs';
+import { saveConfig } from '../src/studio.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
 const VO = join(REPO, 'pipelines/_shared/skills/voiceover/vo.mjs');
@@ -64,27 +64,6 @@ test('the ElevenLabs client reads the plan, ranks models and refuses bad keys cl
   await assert.rejects(new ElevenLabs({ key: 'bad', fetch }).account(), /401: Invalid API key/);
 });
 
-test('the local voice is offered only when the card can run it', () => {
-  assert.equal(recommend([{ name: 'RTX 3080', vram_gb: 10 }]).model, 'CustomVoice 1.7B');
-  assert.equal(recommend([{ name: 'RTX 3060', vram_gb: 6 }]).model, 'CustomVoice 0.6B');
-  assert.equal(recommend([{ name: 'GTX 1050', vram_gb: 2 }]).fits, false);
-  assert.equal(recommend([]).fits, false);
-  const g = speakGraph({ variant: 'TTS - CustomVoice 0.6B (Presets)', voice: 'Ryan', instruct: 'calm' }, 'Hi', 3);
-  assert.equal(g[1].inputs.instruct, ''); // 0.6B takes no instruction
-  assert.equal(ComfyUI.variant(['TTS - CustomVoice 1.7B (Presets + Instruction)', 'TTS - CustomVoice 0.6B (Presets)'], 'CustomVoice 0.6B'), 'TTS - CustomVoice 0.6B (Presets)');
-});
-
-test('ComfyUI is never told to unload while it has other work', async () => {
-  const posts = [];
-  const busy = new ComfyUI({ fetch: async (url, init) => {
-    if (String(url).endsWith('/queue')) return Response.json({ queue_running: [[1, 'someone-else']], queue_pending: [] });
-    posts.push(String(url));
-    return Response.json({});
-  } });
-  assert.equal(await busy.free(), false);
-  assert.equal(posts.length, 0);
-});
-
 test('voice settings: ranges enforced, the key reaches sessions only for ElevenLabs', (t) => {
   const root = tempStudio(t);
   saveVoice(root, { engine: 'elevenlabs', elevenlabs: { stability: 7, speed: 3, output_format: 'nope', apply_text_normalization: 'on', unknown: 1 } });
@@ -97,8 +76,39 @@ test('voice settings: ranges enforced, the key reaches sessions only for ElevenL
   setElevenKey(root, 'secret-key');
   assert.equal(sessionVoiceEnv(root).ELEVENLABS_API_KEY, 'secret-key');
   assert.ok(!sessionVoiceEnv(root).MFX_VOICE.includes('secret-key'));
-  saveVoice(root, { engine: 'qwen' });
+  saveVoice(root, { engine: 'own' });
   assert.equal(sessionVoiceEnv(root).ELEVENLABS_API_KEY, undefined);
+});
+
+test('ElevenLabs is the default and the only generated voice: no local engine, an old local setting reads as ElevenLabs', (t) => {
+  const root = tempStudio(t);
+  assert.deepEqual(ENGINES, ['none', 'elevenlabs', 'own']);
+  assert.equal(voiceConfig(root).engine, 'elevenlabs');
+  assert.throws(() => saveVoice(root, { engine: 'qwen' }), /engine must be one of none, elevenlabs, own/);
+  saveConfig(root, { voice: { engine: 'qwen', qwen: { voice: 'Ryan' } } });
+  const v = voiceConfig(root);
+  assert.equal(v.engine, 'elevenlabs');
+  assert.equal(v.qwen, undefined);
+  assert.ok(!JSON.parse(sessionVoiceEnv(root).MFX_VOICE).qwen, 'sessions never get local voice settings');
+});
+
+test('no ElevenLabs key: a plain message for Settings and the Voice stage, never a silent local fallback', (t) => {
+  const root = tempStudio(t);
+  const was = process.env.ELEVENLABS_API_KEY;
+  delete process.env.ELEVENLABS_API_KEY;
+  t.after(() => { if (was !== undefined) process.env.ELEVENLABS_API_KEY = was; });
+  const o = voiceOverview(root);
+  assert.equal(o.engine, 'elevenlabs');
+  assert.equal(o.elevenlabs_key, null);
+  assert.equal(o.needs_key, NO_KEY_MESSAGE);
+  assert.match(o.needs_key, /no ElevenLabs API key is saved/);
+  assert.equal(o.gpus, undefined);
+  assert.equal(o.local, undefined);
+  setElevenKey(root, 'k');
+  assert.equal(voiceOverview(root).needs_key, null);
+  saveVoice(root, { engine: 'none' });
+  setElevenKey(root, null);
+  assert.equal(voiceOverview(root).needs_key, null, 'no narration needs no key');
 });
 
 function voFixture(t) {
@@ -150,20 +160,10 @@ test('vo.mjs with ElevenLabs: speaks with context, checks every take, retakes a 
   assert.ok(existsSync(join(f.dir, 'voice/voice.wav')));
 });
 
-test('vo.mjs with local Qwen3-TTS: speaks plain words, frees the GPU between speaking and listening', (t) => {
+test('vo.mjs refuses the removed local voice in plain words', (t) => {
   const f = voFixture(t);
   if (!f) return;
-  const voice = { engine: 'qwen', qwen: { url: 'http://127.0.0.1:8188', model: 'CustomVoice 1.7B', voice: 'Ryan', language: 'English', instruct: 'calm', check: true } };
-  const r = f.run(['speak', 'lines.json', '--only', 'b01-1'], voice);
-  assert.equal(r.status, 0, r.stderr + r.stdout);
-  const calls = f.log();
-  const prompts = calls.filter((c) => c.api === 'prompt');
-  assert.deepEqual(prompts[0].classes, ['Qwen3TTSEngineNode', 'UnifiedTTSTextNode', 'PreviewAudio']);
-  assert.equal(prompts[0].engine.model_variant, 'TTS - CustomVoice 1.7B (Presets + Instruction)');
-  assert.equal(prompts[0].engine.instruct, 'calm');
-  assert.deepEqual(prompts[1].classes, ['Qwen3TTSEngineNode', 'LoadAudio', 'UnifiedASRTranscribeNode', 'PreviewAny']);
-  assert.ok(calls.findIndex((c) => c.api === 'free') > calls.indexOf(prompts[0]));
-  const clip = JSON.parse(readFileSync(join(f.dir, 'voice/clips/b01-1.json'), 'utf8'));
-  assert.equal(clip.pass, true);
-  assert.match(clip.engine, /qwen3-tts/);
+  const r = f.run(['speak', 'lines.json'], { engine: 'qwen' });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /the local voice \(Qwen3-TTS\) was removed/);
 });

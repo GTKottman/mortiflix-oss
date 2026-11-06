@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { tempStudio } from './helpers.mjs';
 import { checkInstruments, instrumentCode, registers } from '../pipelines/_shared/skills/music/lib/instruments.mjs';
 import { profileProblems, signatureProblems } from '../pipelines/_shared/skills/music/lib/genre.mjs';
-import { readWav, mixBalance } from '../pipelines/_shared/skills/music/lib/wav.mjs';
+import { readWav, mixBalance, stitchWav } from '../pipelines/_shared/skills/music/lib/wav.mjs';
 import { zip, unzip } from '../src/zip.mjs';
 import { exportPipeline, addPipeline, listPipelines } from '../src/pipelines.mjs';
 import { createProject, startProject, projectPaths, loadProject } from '../src/projects.mjs';
@@ -178,11 +178,16 @@ pad: cue(note("<[a3,c4,e4,g4] [a3,c4,e4,f4] [g3,c4,e4] [g3,b3,d4]>").velocity(.6
 hook: cue(note("<[e5 c5 a4 c5] [c5 a4 f5 a4] [e5 g5 e5 c5] [d5 b4 g4 b4]>").velocity("<.7 .85>").mask(lift)).midichan(3)
 drums: cue(note("[36 ~ ~ 36 38 ~ 36 ~], [42*8]").velocity(.9).mask(lift)).midichan(10)
 `);
-  const env = { ...process.env, MFX_STRUDEL: process.env.MFX_TEST_STRUDEL, MFX_CHROME: chrome.path };
+  const env = { ...process.env, MFX_STRUDEL: process.env.MFX_TEST_STRUDEL, MFX_CHROME: chrome.path, MFX_DAW: 'reaper' };
   const run = (...args) => spawnSync('node', [join(REPO, 'pipelines/_shared/skills/music/strudel.mjs'), ...args], { cwd: dir, env, encoding: 'utf8', timeout: 180_000 });
   let r = run('plan'); assert.equal(r.status, 0, r.stdout + r.stderr);
   r = run('check'); assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(existsSync(join(dir, 'music/notes.json')) && existsSync(join(dir, 'out/music/midi.zip')));
+  // A clip per section, and the cue sheet's import steps written for the owner's DAW.
+  assert.ok(existsSync(join(dir, 'out/music/midi/sections/01-fog-on-the-water/fog-on-the-water-all.mid')));
+  assert.ok(existsSync(join(dir, 'out/music/midi/sections/02-the-lamp-turns/03-hook.mid')));
+  const sheet = readFileSync(join(dir, 'out/music/midi/CUE-SHEET.md'), 'utf8');
+  assert.match(sheet, /## Bringing it into REAPER/); assert.match(sheet, /Insert › Media file/);
   r = run('instruments'); assert.equal(r.status, 1); assert.match(r.stderr, /no music\/instruments\.json yet/);
   INST.parts[2].role = 'Hook';
   writeFileSync(join(dir, 'music/instruments.json'), JSON.stringify({ ...INST, parts: INST.parts.map((p) => (p.channel === 10 ? { ...p, kit: { ...p.kit } } : p)) }));
@@ -193,4 +198,37 @@ drums: cue(note("[36 ~ ~ 36 38 ~ 36 ~], [42*8]").velocity(.9).mask(lift)).midich
   assert.ok(Math.abs(m.master.lufs + 14) <= 1 && m.master.true_peak <= -0.8, JSON.stringify(m.master));
   assert.ok(m.stems.every((s) => s.peak_db > -50), 'no silent stem (a fresh page per render)');
   assert.match(readFileSync(join(dir, 'music/MUSIC-SHEET.md'), 'utf8'), /✔ Audition · ✔ Mastered/);
+  // A long piece renders in sections: the same music in the same place as one whole render. Two whole renders already
+  // differ (the instruments' noise and random details), so sections may differ from a whole render by as much, no more.
+  r = run('render', '--out', 'out/music/whole.wav', '--section-sec', '0'); assert.equal(r.status, 0, r.stdout + r.stderr);
+  r = run('render', '--out', 'out/music/whole2.wav', '--section-sec', '0'); assert.equal(r.status, 0, r.stdout + r.stderr);
+  r = run('render', '--out', 'out/music/sections.wav', '--section-sec', '4'); assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /Rendered 1\/5 sections \(bars 1-2\)/); assert.match(r.stdout, /Rendered 5\/5 sections/);
+  const whole = readWav(join(dir, 'out/music/whole.wav')); const again = readWav(join(dir, 'out/music/whole2.wav')); const parts = readWav(join(dir, 'out/music/sections.wav'));
+  assert.ok(Math.abs(whole.channels[0].length - parts.channels[0].length) <= 1, `${whole.channels[0].length} vs ${parts.channels[0].length} frames`);
+  const apart = (x) => { let sig = 0; let diff = 0; for (let c = 0; c < 2; c++) for (let i = 0; i < Math.min(whole.channels[c].length, x.channels[c].length); i++) { sig += whole.channels[c][i] ** 2; diff += (whole.channels[c][i] - x.channels[c][i]) ** 2; } return 10 * Math.log10(diff / sig); };
+  const [same, split] = [apart(again), apart(parts)];
+  assert.ok(split < same + 3, `sections differ from the whole by ${split.toFixed(1)} dB, two whole renders by ${same.toFixed(1)} dB`);
+});
+
+test('music engine: sections stitch back sample-exact, each ring-out added into the next', (t) => {
+  const dir = scratch(t);
+  const wav16 = (file, frames, fill) => {
+    const b = Buffer.alloc(44 + frames * 4);
+    b.write('RIFF', 0, 'latin1'); b.writeUInt32LE(36 + frames * 4, 4); b.write('WAVE', 8, 'latin1'); b.write('fmt ', 12, 'latin1');
+    b.writeUInt32LE(16, 16); b.writeUInt16LE(1, 20); b.writeUInt16LE(2, 22); b.writeUInt32LE(1000, 24); b.writeUInt32LE(4000, 28); b.writeUInt16LE(4, 32); b.writeUInt16LE(16, 34);
+    b.write('data', 36, 'latin1'); b.writeUInt32LE(frames * 4, 40);
+    for (let i = 0; i < frames; i++) { b.writeInt16LE(Math.round(fill(i) * 32767), 44 + i * 4); b.writeInt16LE(Math.round(fill(i) * 32767), 46 + i * 4); }
+    writeFileSync(file, b);
+  };
+  // Section 1: frames 0-99 plus 30 frames of ring-out; section 2: frames 100-149 (the end).
+  wav16(join(dir, 'a.wav'), 130, (i) => (i < 100 ? 0.25 : 0.1));
+  wav16(join(dir, 'b.wav'), 50, () => 0.5);
+  const r = stitchWav([{ file: join(dir, 'a.wav'), at: 0 }, { file: join(dir, 'b.wav'), at: 100 }], join(dir, 'out.wav'), { frames: 150, rate: 1000 });
+  assert.equal(r.frames, 150); assert.equal(r.clipped, 0);
+  const w = readWav(join(dir, 'out.wav'));
+  assert.equal(w.channels[0].length, 150);
+  const at = (i) => +w.channels[1][i].toFixed(2);
+  assert.deepEqual([at(0), at(99), at(100), at(129), at(130), at(149)], [0.25, 0.25, 0.6, 0.6, 0.5, 0.5]);
+  assert.throws(() => stitchWav([{ file: join(dir, 'a.wav'), at: 0 }, { file: join(dir, 'b.wav'), at: 100 }, { file: join(dir, 'b.wav'), at: 50 }], join(dir, 'x.wav'), { frames: 250, rate: 1000 }), /starts at frame 50, but 100 frames/, 'sections out of order');
 });

@@ -2,8 +2,9 @@
 // qc.mjs: the automated half of the final pass (the other half is you looking at the frame sheet).
 //
 //   node .claude/skills/final-pass/qc.mjs out/final.mp4 [--size 1920x1080] [--fps 30] [--duration 60]
-//        [--lufs -14] [--true-peak -1] [--allow-black] [--end-hold] [--sheet checks/final-sheet.png] [--json checks/qc-final.json]
+//        [--lufs -14] [--true-peak -1] [--allow-black] [--end-hold] [--no-loudness] [--sheet checks/final-sheet.png] [--json checks/qc-final.json]
 //
+// --no-loudness: skip the loudness and true-peak checks (a partial clip's narration is not the whole video's).
 // --end-hold: a still stretch that runs to the very end is designed (a logo that settles and holds), not frozen.
 //
 // Checks: format (size, frame rate, codecs, duration), black frames, frozen stretches, integrated loudness and true
@@ -14,7 +15,7 @@ import { dirname, basename, extname } from 'node:path';
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith('--') && !isValue(a));
-function isValue(a) { const i = args.indexOf(a); return i > 0 && args[i - 1].startsWith('--') && !['--allow-black', '--end-hold'].includes(args[i - 1]); }
+function isValue(a) { const i = args.indexOf(a); return i > 0 && args[i - 1].startsWith('--') && !['--allow-black', '--end-hold', '--no-loudness'].includes(args[i - 1]); }
 const opt = (name, def = null) => { const i = args.indexOf(`--${name}`); return i >= 0 && args[i + 1] !== undefined ? args[i + 1] : def; };
 if (!file) { console.error('usage: qc.mjs <video> [--size WxH] [--fps N] [--duration S] [--lufs -14] [--true-peak -1]'); process.exit(2); }
 
@@ -42,7 +43,9 @@ if (video) {
   add('format.pixel', video.pix_fmt === 'yuv420p', `${video.pix_fmt} (yuv420p plays everywhere)`);
 }
 const wantDur = Number(opt('duration', 0));
-add('format.duration', !wantDur || Math.abs(duration - wantDur) <= wantDur * 0.05, `${round(duration, 2)} s${wantDur ? ` (want ${wantDur} s ±5%)` : ''}`);
+// within 5% or one frame, whichever is more (a short scene clip is a few frames from its plan at most)
+const durTol = Math.max(wantDur * 0.05, fps > 0 ? 1 / fps : 1 / 30);
+add('format.duration', !wantDur || Math.abs(duration - wantDur) <= durTol + 1e-6, `${round(duration, 2)} s${wantDur ? ` (want ${wantDur} s, ±${round(durTol, 2)} s)` : ''}`);
 
 // ---- black and frozen frames (one decoding pass) ----
 if (video) {
@@ -61,7 +64,7 @@ if (video) {
 }
 
 // ---- loudness ----
-if (audio) {
+if (audio && !args.includes('--no-loudness')) {
   const r = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-vn', '-af', 'ebur128=peak=true', '-f', 'null', '-'], { encoding: 'utf8', maxBuffer: 64 << 20 });
   const summary = r.stderr.slice(r.stderr.lastIndexOf('Summary:'));
   const I = Number(summary.match(/I:\s+(-?[\d.]+) LUFS/)?.[1]);

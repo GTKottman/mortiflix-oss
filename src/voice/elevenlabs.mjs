@@ -1,3 +1,4 @@
+import { replayOn, isReplayFetch, refuseReal } from '../replay.mjs';
 // ElevenLabs, for setting a studio up (the account, models, voices, the Voice Library, a test line). Sessions make
 // their narration with the voiceover skill's vo.mjs; this module is what Settings and `mortiflix voice` use.
 // Reference: https://elevenlabs.io/docs (models, voices, text to speech, user/subscription), checked Oct 2026.
@@ -61,11 +62,39 @@ export function voiceSettings(cfg, model) {
 
 const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
+// How long one ElevenLabs request may take before it is given up (fetch with AbortSignal.timeout, MDN: the signal
+// aborts with a TimeoutError). A stalled connection never holds a paid batch or the queue for hours.
+export const TIMEOUT_MS = { read: 30_000, speech: 120_000, sound: 120_000, music: 10 * 60_000 };
+export const timeoutSignal = (ms) => AbortSignal.timeout(ms);
+
+// A paid POST whose answer never came (network error, timeout) is not sent again on its own: the ElevenLabs docs do not
+// say whether such a request was billed, so a retry could pay twice. The owner decides after checking the history.
+export const lostWhy = (e, what = 'ElevenLabs') => (e?.name === 'TimeoutError'
+  ? `${what} did not answer in time. It may still have made (and charged) it: check your ElevenLabs history before making it again`
+  : `${what} could not be reached (${String(e?.message || e).slice(0, 160)}). It may still have made (and charged) it: check your ElevenLabs history before making it again`);
+
+// What an ElevenLabs error answer means, in plain words, the status kept in it (ElevenLabs docs, API errors: 401
+// authentication_error, 402 payment_required / insufficient_credits, 429 rate_limit_exceeded /
+// concurrent_limit_exceeded / system_busy, 500 internal_error, 503 service_unavailable; quota_exceeded can come as 401).
+export function elevenWhy(status, text = '') {
+  let detail = String(text || '');
+  try { const j = JSON.parse(detail); detail = j.detail?.message || (typeof j.detail === 'string' ? j.detail : '') || j.message || detail; } catch { /* plain text */ }
+  const credits = status === 402 || /quota_exceeded|insufficient_credits|payment_required/i.test(String(text));
+  const why = credits ? 'out of ElevenLabs credits or over the plan limit'
+    : status === 401 || status === 403 ? 'the ElevenLabs key was refused: check it in Settings › Keys'
+      : status === 429 ? 'ElevenLabs says too many requests at once or too fast: wait a little, then try again'
+        : status >= 500 ? 'ElevenLabs had a server problem: try again later'
+          : `ElevenLabs refused the request`;
+  return `${why} (${status})${detail ? `: ${String(detail).slice(0, 200)}` : ''}`;
+}
+
 export class ElevenLabs {
   constructor({ key, server = 'default', fetch = globalThis.fetch }) {
     if (!key) throw new Error('no ElevenLabs API key');
     this.key = key;
     this.base = SERVERS[server] || SERVERS.default;
+    // replay mode: only the recorded stand-in (src/replay.mjs) may answer; a real client is refused outright
+    if (replayOn() && !isReplayFetch(fetch)) refuseReal('a real ElevenLabs client');
     this.fetch = fetch;
   }
 
@@ -79,6 +108,7 @@ export class ElevenLabs {
       method,
       headers: { 'xi-api-key': this.key, ...(body ? { 'content-type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
+      signal: timeoutSignal(method === 'GET' ? TIMEOUT_MS.read : TIMEOUT_MS.speech),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');

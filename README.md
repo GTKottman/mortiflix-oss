@@ -14,6 +14,14 @@ Claude makes the video step by step. You approve every stage.</p>
 > them, and it has a **free plan** ($0/mo, 10 uploads a month), so you can start without paying. See
 > [Publishing](#publishing-optional).
 
+> [!IMPORTANT]
+> **This is v0.0.1 of Mortiflix UI, the desktop app, and it is expected to have bugs.** Work over the coming month will
+> solve those. Please [open an issue](https://github.com/GTKottman/mortiflix-oss/issues) when you hit one.
+
+**[Download Mortiflix UI](https://mortiflix.com/download)** for Windows or Linux. macOS comes later.
+
+<p align="center"><img src="docs/screenshots/motion.png" width="800" alt="Mortiflix UI on the Motion stage"></p>
+
 <p align="center"><a href="https://youtu.be/53bRoQENmSA"><img src="docs/media/how-to-use-mortiflix.gif" width="720" alt="How to use Mortiflix: tap to watch the video"></a><br>
 <b>▶ <a href="https://youtu.be/53bRoQENmSA">Watch: How to use Mortiflix</a></b> (3:07). This video was made with Mortiflix.</p>
 
@@ -35,6 +43,19 @@ sessions and days.
    └── you ───┴──── you ───┴───── you ────┴──────── you ────────┘
        approve, pin notes, answer questions (the session stops at every gate)
 ```
+
+## Mortiflix UI
+
+The desktop app (source in [`app/`](app)) takes one project through six stages: Script, Voice & music, Look, Motion,
+Sound and Finish. **Assets** shows every file a project made, what each AI call was sent and answered, and how far each
+of your settings reaches.
+
+| | |
+|---|---|
+| ![Create a video](docs/screenshots/new.png) Create a video | ![Script](docs/screenshots/script.png) Script |
+| ![Voice & music](docs/screenshots/voice.png) Voice & music | ![Look](docs/screenshots/look.png) Look |
+| ![Motion](docs/screenshots/motion.png) Motion | ![Sound](docs/screenshots/sound.png) Sound |
+| ![Finish](docs/screenshots/finish.png) Finish | ![Assets](docs/screenshots/assets.png) Assets |
 
 ## Why it's built this way
 
@@ -153,9 +174,10 @@ For scripts: `echo "$KEY" | mortiflix keys set elevenlabs`.
 | `logo-sting` | directions → final | a 3–8 s logo animation; the quickest real run |
 | `song` | blueprint → final | an instrumental song from a genre and a topic: researched genre, checked score, MIDI, an instrument per channel, a mastered track |
 
-They build in [Remotion](https://www.remotion.dev/) (React video) and check every render with ffmpeg (`qc.mjs`:
-format, black or frozen frames, loudness, a frame sheet Claude has to look at). Remotion has its own license: free for individuals and small teams, a company
-license above that. Check it for your case.
+They write the video with Remotion's React API and render it with [Kinetograph](https://github.com/GTKottman/kinetograph)
+(native, no Chrome; renders queued through `mfx render`), then check every render with ffmpeg (`qc.mjs`: format, black
+or frozen frames, loudness, a frame sheet Claude has to look at). Kinetograph has its own license (PolyForm Small
+Business 1.0.0: free for individuals and small businesses, a commercial license above that). Check it for your case.
 
 ## Narration
 
@@ -165,9 +187,6 @@ Pick a voice in **Settings › Narration** (or `mortiflix voice`):
   Eleven v4 by default and every option the API offers (models, stability and similarity, language, text
   normalization, pronunciation dictionaries, audio format, data-residency servers), plus sound effects and music
   beds. Settings shows your plan, credits, and whether you may use the audio commercially (the free plan doesn't).
-- **This computer**: Qwen3-TTS (open, Apache-2.0) through ComfyUI on your graphics card: free and private. Mortiflix
-  checks your GPU and offers it when it fits (4 GB for the 0.6B voice, 8 GB for the 1.7B voice with delivery
-  instructions).
 - **Your own voice**: you read the script yourself, one short line at a time, in the **recording booth**: in the web
   studio (hold Space to record, listen back, keep the best take), in a terminal (`mortiflix record <project>`), or by
   importing files you recorded elsewhere (`mortiflix record <project> --import <folder>`). The studio asks for you when
@@ -186,7 +205,7 @@ frames rendered from the two style frames and the chosen transition. Transitions
 ones inspired by it. The screen never goes blank: no dip to a flat colour, no flash to white. A check reads every
 10% of every transition and fails any frame that does.
 
-## Setup: music, assets and 3D
+## Setup: music, assets, 3D and the Craft apps
 
 `mortiflix setup` (or **Settings › Setup**) explains each part, why it's needed and what it installs, then asks.
 Everything goes into the studio folder, never system-wide. Full details: [docs/SETUP.md](docs/SETUP.md).
@@ -203,6 +222,11 @@ Everything goes into the studio folder, never system-wide. Full details: [docs/S
 - **3D.** Blender with the studio's toolkits, in its own profile (your Blender setup is never touched): MoBlend
   (MoGraph), Camera, Animate, Math, Circuits, Camera Flight for flying the camera yourself (`mortiflix blender`), and
   **Nova FX**, Mortiflix's own particle engine (particles, fire, sparks, fireworks), which builds on Linux only for now.
+- **Craft apps.** Optional: EffectCraft, PhotoCraft, VectorCraft, LightCraft and seven more, the
+  open-source (MIT/Apache-2.0) remakes of the Adobe apps by the team behind [ArtCraft](https://github.com/storytold).
+  `mortiflix craft install` pulls their official builds, checked against each release's SHA256SUMS. Sessions drive
+  them through each app's own MCP server and hand you files you can open and change (PSD, SVG, comps, edits).
+  `mortiflix craft register` adds the servers to your own Claude Code too. [docs/SETUP.md](docs/SETUP.md#craft-apps)
 
 ## Publishing (optional)
 
@@ -263,7 +287,7 @@ makes it, it can be a pipeline.
 - [harness/GATES.md](harness/GATES.md): the protocol every session follows
 - [docs/SECURITY.md](docs/SECURITY.md): what a session can and can't reach, and the web server's guards
 - [docs/COMPUTE.md](docs/COMPUTE.md): where the tokens, time and disk go, measured on a real project
-- [docs/VOICE.md](docs/VOICE.md): narration with ElevenLabs or on your own GPU, and every option
+- [docs/VOICE.md](docs/VOICE.md): narration with ElevenLabs (the only generated voice), your own voice, and every option
 - [docs/SETUP.md](docs/SETUP.md): every part of setup, what it installs and where
 - [docs/MUSIC.md](docs/MUSIC.md): how the music step writes, checks and renders a score
 

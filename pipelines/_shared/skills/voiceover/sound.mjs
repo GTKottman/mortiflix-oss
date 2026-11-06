@@ -9,7 +9,8 @@
 // music: Eleven Music (music_v2_5 by default, --model to change), 3 s to 10 min, instrumental unless --vocals.
 //        Usage terms for music depend on the ElevenLabs plan: https://elevenlabs.io/music-terms
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const args = process.argv.slice(2);
 const [kind, prompt] = args;
@@ -47,6 +48,18 @@ const res = await fetch(new URL(`${path}?output_format=mp3_44100_128`, SERVERS[c
   body: JSON.stringify(body),
 });
 if (!res.ok) die(`ElevenLabs ${res.status} ${(await res.text()).slice(0, 300)}`);
+// the studio's usage ledger: credits from the response header (music: the estimate of 33 a second when it has none)
+{
+  const home = process.env.MFX_HOME;
+  if (home) {
+    try {
+      const { bookSpend, costHeader } = await import(pathToFileURL(join(home, 'src', 'voice', 'spend.mjs')).href);
+      const real = costHeader(res);
+      const est = kind === 'music' && seconds ? Math.ceil(seconds * 33) : null;
+      bookSpend({ kind, model: body.model_id, credits: real ?? est, estimated: real === null && est !== null, seconds });
+    } catch { /* the sound still counts */ }
+  }
+}
 mkdirSync(dirname(out), { recursive: true });
 writeFileSync(out, Buffer.from(await res.arrayBuffer()));
 console.log(`${out}: ${kind}${seconds ? `, ${seconds} s` : ''}. Note its prompt in assets/SOURCES.md.`);

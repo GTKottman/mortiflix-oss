@@ -80,8 +80,8 @@ key is checked with a free, read-only API call before it's saved.
 
 - **Nothing installs without you asking** (a confirmation in the terminal, an Install button on the page), and
   everything goes into the studio folder or your own user tools: never system-wide, never as root. Sources: npm
-  (Strudel), Google's Chrome for Testing, astral.sh (uv), PyPI via uv (browser-harness), GitHub (ComfyUI, the TTS
-  Audio Suite, the 3D toolkits), download.blender.org. The web studio's install endpoints are behind the same guards
+  (Strudel), Google's Chrome for Testing, astral.sh (uv), PyPI via uv (browser-harness, qwen-tts, qwen-asr), the PyTorch index, GitHub (ComfyUI,
+  the TTS Audio Suite, the 3D toolkits), download.blender.org. The web studio's install endpoints are behind the same guards
   as every other change (loopback or token, the `X-Mortiflix` header).
 - **The studio's Blender has its own profile**, so add-ons installed for sessions never load in your own Blender, and
   your add-ons never load in theirs.

@@ -1,0 +1,24 @@
+diff --git a/modules/tracktion_engine/utilities/tracktion_Oscillators.h b/modules/tracktion_engine/utilities/tracktion_Oscillators.h
+index 4315524..16ab3bf 100644
+--- a/modules/tracktion_engine/utilities/tracktion_Oscillators.h
++++ b/modules/tracktion_engine/utilities/tracktion_Oscillators.h
+@@ -77,8 +77,8 @@ private:
+ 
+     BandlimitedWaveLookupTables::Ptr lookupTables;
+ 
+-    juce::Random random;
+-    std::default_random_engine generator;
++    juce::Random random { 1 };   // mortiflix: a fixed seed, so a render is the same file every time (doc 24 §1)
++    std::default_random_engine generator { 1 };   // mortiflix: fixed seed (deterministic renders)
+     std::normal_distribution<float> normalDistribution {0.0f, 0.1f};
+ };
+ 
+@@ -104,7 +104,7 @@ public:
+ 
+ private:
+     juce::OwnedArray<Oscillator> oscillators;
+-    juce::Random random;
++    juce::Random random { 1 };   // mortiflix: a fixed seed, so a render is the same file every time (doc 24 §1)
+ 
+     int voices = 1;
+     float detune = 0, spread = 0, gain = 1.0f, note = 69.0f, pan = 0.0f;

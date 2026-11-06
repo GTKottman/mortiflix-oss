@@ -33,6 +33,8 @@ What that means:
 
 ## Fixed: one Remotion install per studio, not per project
 
+(History: the shared install now holds the Kinetograph template, which has no Chrome; the pattern is the same.)
+
 Every project used to `npm install` the Remotion template: **748 MB per project** (220 MB of it a private Chrome) and
 about half a minute of downloading. Ten videos, 7.5 GB of identical files.
 
@@ -42,12 +44,22 @@ A new project's video folder is ~100 KB and ready in a second. Changing the temp
 shared install; old projects keep theirs. A project that needs an extra package replaces the link with its own
 install.
 
-## Renders: one at a time, by design
+## Renders: as many at once as the machine can take
 
-Remotion renders drive Chrome, and memory is what kills long renders. `mfx render` queues every heavy job studio-wide,
-and `renderPrefix` lets a machine-wide queue wrap it (this machine's `render-queue`, shared with other tools). Measured
-on a GPU machine: `--gl=angle` rendered 1080p about 1.7× faster than the software renderer; use one `--gl` mode per
-video so cuts don't shimmer.
+Videos render with Kinetograph (`kinetograph render` / `still`, the studio's install in tools/kinetograph): Remotion-API TSX drawn natively by a GPU
+compositor, no Chrome, falling back to its CPU renderer on a machine without a GPU. Remotion renders (`npx remotion`)
+are no longer used. Memory is still what kills long renders, so `mfx render` queues every heavy job studio-wide, and
+`renderPrefix` lets a machine-wide queue wrap it (this machine's `render-queue`, shared with other tools).
+`--concurrency` draws several frames at once on a long film; the file is the same.
+
+The queue runs several renders at once (owner, 2026-11-02: an idle machine in a one-by-one line is waste). config.json
+`renders.parallel` is a number or `"auto"` (default). Auto, re-decided whenever a render could start:
+min(CPU threads / threads per render, floor(0.7 x available RAM / peak RAM per render)). Threads per render is
+Kinetograph's own default (half the cores, at most 4), so a 16-thread machine runs 4 renders of 4 workers. The peak is
+measured: the RSS of each render's process group, sampled every 2 s, kept per kind of render in `run/renders/peaks.json`;
+4.5 GB until a kind is measured (0.5 to 1 GB a Kinetograph worker). A second render never starts under 4 GB available.
+Renders of different projects take turns, so one project's batch never holds up another's. On this machine (16 threads,
+32 GB) that is 4 with plenty of RAM free, 2 at 13 GB available, 1 under about 6.5 GB.
 
 ## Things that look wasteful but aren't
 

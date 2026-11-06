@@ -3,7 +3,7 @@ name: mortiflix
 description: Walk the owner through Mortiflix, the motion design studio on their own machine, from inside Claude Code - install, setup, writing a brief, running the studio, and every review gate through to the delivered video. Only when the owner types /mortiflix.
 argument-hint: "[demo | new <pipeline> | review | status | setup]"
 disable-model-invocation: true
-allowed-tools: Bash(command -v mortiflix), Bash(mortiflix list --json), Bash(mortiflix status * --json), Bash(mortiflix review --json), Bash(mortiflix review * --json), Bash(mortiflix pipelines --json), Bash(mortiflix setup status --json), Bash(mortiflix keys --json), Bash(mortiflix doctor)
+allowed-tools: Bash(command -v mortiflix), Bash(mortiflix list --json), Bash(mortiflix status * --json), Bash(mortiflix review --json), Bash(mortiflix review * --json), Bash(mortiflix pipelines --json), Bash(mortiflix setup status --json), Bash(mortiflix keys --json), Bash(mortiflix craft --json), Bash(mortiflix doctor)
 ---
 
 # /mortiflix
@@ -66,9 +66,8 @@ Say what's already there (`tools`), then ask. Use AskUserQuestion for choices. E
 - **Narration** (`narration.engine`):
   - `mortiflix voice none` or `mortiflix voice own` work from here. `own` is the recording booth: they read the
     lines themselves.
-  - ElevenLabs and the local Qwen3-TTS voice involve choosing a voice and typing a key. Send the owner to their own
-    terminal (`mortiflix voice elevenlabs` / `mortiflix voice local`) or to Settings › Narration in the web studio.
-    Offer local only when `narration.local.fits` is true.
+  - ElevenLabs (the only generated voice) involves choosing a voice and typing a key. Send the owner to their own
+    terminal (`mortiflix voice elevenlabs`) or to Settings › Narration in the web studio. There is no local voice.
 - **Music**: `mortiflix setup music strudel [--midi]` or `mortiflix setup music none`. With Strudel, also
   `mortiflix setup install strudel chrome`. Chrome reuses theirs when they have one.
 - **Assets**: only if they use a stock site. `mortiflix setup assets <url> …`, then
@@ -78,6 +77,10 @@ Say what's already there (`tools`), then ask. Use AskUserQuestion for choices. E
   `mortiflix keys set uploadpost`.
   Postiz was removed after the Railway security breach of 2026-10-21: never set it up.
 - **3D**: only if they want it. `mortiflix setup install blender blender-addons`.
+- **Craft apps**: optional. Open-source remakes of After Effects, Premiere, Photoshop, Illustrator and more, each with
+  its own MCP server. `mortiflix craft install all` or `mortiflix craft install <app>…` (`mortiflix craft --json`
+  lists them). Sessions get them on their own. For the owner's own Claude Code too, `mortiflix craft register`
+  (it changes their Claude Code config: ask first).
 
 Before each install, say what it is, where it goes and how big it is (`tool_info[id]`). Installs can take minutes, so
 run them in the background and report when they finish. Finish with `mortiflix doctor`.

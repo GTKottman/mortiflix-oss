@@ -1,6 +1,6 @@
 ---
 name: voiceover
-description: Narration, sound effects and music beds in the voice the studio set up (ElevenLabs, Qwen3-TTS on this machine's GPU, or the owner's own voice from the recording booth): lines from the approved script, checked takes, one voice track and a word-timing map the animation follows. Use for any narrated animatic or final, a re-take, or sound design.
+description: Narration, sound effects and music beds in the voice the studio set up (ElevenLabs, or the owner's own voice from the recording booth): lines from the approved script, checked takes, one voice track and a word-timing map the animation follows. Use for any narrated animatic or final, a re-take, or sound design.
 ---
 
 # Voiceover
@@ -22,8 +22,6 @@ node $VO build voice/lines.json                  # voice/voice.wav + voice/timin
 - **`elevenlabs`**: the voice, model and settings are chosen; the key is in your environment (never print it).
   `check` shows the plan and credits. On the **free plan** the audio is non-commercial and must credit ElevenLabs:
   say so in your submission note.
-- **`qwen`**: Qwen3-TTS on this machine's GPU through ComfyUI (free, local). If `check` says ComfyUI or the suite
-  isn't ready, that's a `mfx needs-you`.
 - **`none`**: no narration. If the brief asked for one, ask at the next gate whether to go on-screen-text-only
   (the default) or wait while the owner sets a voice up. Never use a robotic system voice.
 - **`own`**: the owner narrates in their own voice. Write `voice/lines.json` exactly as below (short lines; put
@@ -69,30 +67,24 @@ One entry per sentence or breath group (under ~600 characters; short lines are c
 Other ElevenLabs models (if the owner chose one): `eleven_multilingual_v2` has style and speed settings and takes
 `<break time="1.0s" />` pauses (up to 3 s); `eleven_flash_v2` takes `<phoneme>` tags. Don't use tags v4-style on them.
 
-### Directing Qwen3-TTS (local)
-
-- Delivery comes from the **instruction** the owner set (1.7B model); the line is read as plain words. Tags and IPA
-  are dropped before speaking (`script` is read when present), so **spell hard names the way they sound** in `script`.
-- 10 languages (English, Chinese, Japanese, Korean, German, French, Russian, Portuguese, Spanish, Italian).
-
 ## 2. Speak and check
 
-`speak` makes each line, listens to it with speech to text (ElevenLabs Scribe v2, or Qwen3-ASR locally), and keeps
+`speak` makes each line, listens to it with speech to text (ElevenLabs Scribe v2), and keeps
 it when at least 92% of the words match the script with no 3-word run missing or added, and no stray sounds. A line
 that fails is retaken with a new seed (up to `--max-takes`, default 3); the best take is kept either way. ElevenLabs
-lines run several at once (the plan's limit minus one); local lines run speak-all, then listen-all, because the two
-models take turns on the GPU.
+lines run several at once (the plan's limit minus one).
 
 - Results: `voice/clips/<id>.(mp3|wav)` + `<id>.json` (engine, take, seed, the transcript, word timings),
   every take in `voice/takes/`, and `voice/speak-report.json`.
 - **A line that keeps failing: fix the input, don't re-roll.** Split a long sentence, spell out a number, add IPA
-  (ElevenLabs) or a sounds-like spelling (local), then `speak --only` it.
+  (ElevenLabs), then `speak --only` it.
 - **Listen** to the first two lines before making the rest: pace, pronunciation, tone. The check catches missing
   words, not taste.
 
 ## 3. Build
 
-`build` joins the clips with their gaps into `voice/voice.wav` (48 kHz mono) and writes `voice/timing.json`: every
+`build` trims each clip to its words (the dead air at a take's edges is cut, with tiny fades; `--no-trim` keeps
+them whole), joins the clips with their gaps into `voice/voice.wav` (48 kHz mono) and writes `voice/timing.json`: every
 line's start and end, and every word's start and end when the check measured them (`"timing": "words"`), otherwise
 the line only. Turn the times you animate to into frames (`Math.round(seconds * fps)`) in `video/src/timing.ts`,
 and copy `voice.wav` into `video/public/`. Never cut inside a word: cut in the silences.
@@ -110,8 +102,11 @@ Music: instrumental unless `--vocals`, 3 s to 10 min. Note every prompt in `asse
 
 ## 5. Mix
 
-Music about 18 dB under the voice while it speaks; it can come up in the gaps. The final mix: -14 LUFS, true peak
-≤ -1 dBTP (final-pass skill).
+The narration is never processed: no speed change (`atempo` or any other), no compressor, limiter, EQ or loudness
+normalisation, from the engine's file to the final mix. Record lossless (ElevenLabs `output_format` `pcm_48000`).
+The mix is Dubstage (`$MFX_DUBSTAGE`): the voice untouched, the music about 20 dB under it while it speaks, one plain
+gain for the whole soundtrack (the level stops where the voice's own peaks reach -1 dBTP; no limiter). Its `--bus-out`
+proves the voice is untouched: the mix minus the bus is the voice times one gain.
 
 ## 6. Record
 

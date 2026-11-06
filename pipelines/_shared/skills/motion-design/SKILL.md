@@ -38,7 +38,8 @@ A motion design video is a sequence of designed frames that move. Design the fra
 ## Motion
 
 - **Easing:** nothing moves linearly except mechanical things. Ease out on entrances (fast in, soft landing),
-  ease in on exits. In Remotion, `spring({ frame, fps, config: { damping: 200 } })` for calm, lower damping for bounce.
+  ease in on exits. In the Remotion API (rendered by Kinetograph), `spring({ frame, fps, config: { damping: 200 } })`
+  for calm, lower damping for bounce.
 - **Stagger** related elements by 2–4 frames; never animate a whole layout as one block.
 - **Overlap actions:** the next element starts before the last one fully settles.
 - **Transitions carry meaning:** a shape from one scene becomes the frame of the next (match cut), or the camera moves

@@ -76,6 +76,32 @@ A 404, a blocked site, a missing photo, a failed download or a tool error is nev
    turn. `mfx handoff` writes the journal entry: don't edit `JOURNAL.md` yourself. Don't wait or poll: the next session starts when the owner responds. If other steps are ready (steps can
    run side by side), carry on with them before you stop.
 
+## The canvas: three small files
+
+The owner works on a canvas: every beat, style frame and shot of the video in its own place, each beat in its own
+colour. The studio builds it from three files you write in the working folder (ids are forever: `b04` stays `b04` when
+it's rewritten, moved or cut, and a new beat takes the next free number):
+
+```json
+// script/beats.json (with the script)
+{ "beats": [ { "id": "b01", "name": "The heartbeat", "words": "Every city has a heartbeat.", "visual": "A city map pulses.", "target_sec": 6 } ] }
+// `name`: a short title for the beat, 2-4 words (shown on the nodes, the script and the editor's bins)
+// design/frames.json (with the style frames)
+{ "frames": [ { "id": "sf01", "file": "out/frames/sf01-open.png", "label": "SF01 · Opening", "beats": ["b01"] } ] }
+// out/scenes.json (with the animatic, and again with the final)
+{ "made_from": "out/animatic.mp4", "fps": 30, "scenes": [ { "key": "s01", "name": "The map wakes up", "from_frame": 0, "frames": 180, "beat": "b01" } ] }
+```
+
+**Nothing runs ahead of a gate.** Every step, canvas steps too (script, voice, style frames, transitions, animatic in
+the explainer), starts only when every step before it is approved: once you submit, hand off and stop while the owner
+reviews its pieces on the canvas. Their OKs, cuts and edit requests arrive as edit requests.
+
+**Edit requests.** The owner can click any piece on the canvas and ask for a different version. Those arrive as edit
+requests (`mfx edits`, and listed at the top of CLAUDE.md) and come before everything else: remake only that piece,
+write it where the canvas reads it (a shot remade alone: give its scene in `out/scenes.json` a `"file"` of its own),
+`mfx canvas`, then `mfx edit done <id> "what you changed"` (refused until the piece has a new version) or
+`mfx edit fail <id> "why"`.
+
 ## Reading the owner's response
 
 It's in `feedback/<step>-v<n>.json` and summarized in `CLAUDE.md`:
@@ -110,13 +136,13 @@ Write it for every future video. If a check already covers it, `mfx propose-chec
 Renders are heavy, so the studio runs one at a time, across every project.
 
 ```
-mfx render --label "animatic 1080p" -- npx remotion render src/index.ts Main out/animatic.mp4
+mfx render --label "animatic 1080p" -- kinetograph render src/index.ts --comp Main -o ../out/animatic.mp4
 mfx render-wait 1          # waits up to 100 s; call again until state is done or failed
 ```
 
 - `mfx render` returns at once with an id. Keep calling `mfx render-wait <id>` until `state` is `done` or `failed`;
   the result includes the end of the output.
-- Stills (`npx remotion still`) and anything else that starts a browser or the GPU go through it too.
+- Stills (`kinetograph still`) and anything else that starts a browser or the GPU go through it too.
 - Anything still running when your session ends is stopped: don't end your turn with a render in flight.
 
 ## Before you stop

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mortiflix Studio
+Comment=Mortiflix Studio window
+# Replace @HOME@ with the home folder, then copy to ~/.local/share/applications/mortiflix-studio.desktop
+Exec=@HOME@/Documents/programs/mortiflix-app/shell/mortiflix-studio
+Icon=@HOME@/Documents/programs/mortiflix-app/shell/src-tauri/icons/128x128.png
+Terminal=false
+Categories=AudioVideo;Video;
+StartupWMClass=mortiflix-studio

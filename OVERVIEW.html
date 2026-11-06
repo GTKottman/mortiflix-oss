@@ -240,7 +240,7 @@ flowchart TB
     <section id="deployment">
       <div class="kicker">Runtime</div>
       <h2>Deployment</h2>
-      <p>Everything runs on one machine. The studio process starts sessions as child processes (Claude Code) or runs its own agent loop against the Claude API, and starts renders (Remotion, ffmpeg, Chrome) one at a time.</p>
+      <p>Everything runs on one machine. The studio process starts sessions as child processes (Claude Code) or runs its own agent loop against the Claude API, and starts renders (Kinetograph, ffmpeg) one at a time.</p>
       <figure>
         <div class="diagram"><pre class="mermaid">
 flowchart LR
@@ -254,7 +254,7 @@ flowchart LR
     browser["Browser<br/>web studio"]
     sock[("Unix socket<br/>OS temp dir")]
     claudecli["claude -p<br/>(optional bubblewrap sandbox)"]
-    tools["Remotion · ffmpeg · Chrome"]
+    tools["Kinetograph · ffmpeg"]
     comfy["ComfyUI + Qwen3-TTS<br/>(optional, GPU)"]
     fs[("Studio folder<br/>~/Mortiflix")]
   end
@@ -290,7 +290,7 @@ flowchart LR
   root --> pl["pipelines/<br/>your own (override built-ins)"]
   root --> projects["projects/‹id›/<br/>working folder · session cwd"]
   root --> state["state/‹id›/<br/>the record"]
-  root --> runf["run/<br/>runner lock, render logs, shared Remotion install"]
+  root --> runf["run/<br/>runner lock, render logs, shared Kinetograph install"]
   projects --> w1["CLAUDE.md · JOURNAL.md · checklist.md"]
   projects --> w2["pipeline/ · .claude/skills/ · .mortiflix/GATES.md"]
   projects --> w3["input/ · feedback/ · out/ · video/"]
@@ -641,15 +641,15 @@ flowchart TB
     <section id="renders">
       <div class="kicker">Behaviour</div>
       <h2>Renders</h2>
-      <p>Heavy work (Remotion, anything that starts Chrome or the GPU) goes through <code>mfx render</code>. It queues the job studio-wide and returns an id at once; <code>mfx render-wait</code> waits up to a timeout. No tool call blocks longer than a backend allows, and two renders never fight for memory.</p>
+      <p>Heavy work (Kinetograph renders and stills, anything that starts Chrome or the GPU) goes through <code>mfx render</code>. It queues the job studio-wide and returns an id at once; <code>mfx render-wait</code> waits up to a timeout. No tool call blocks longer than a backend allows, and two renders never fight for memory.</p>
       <figure>
         <div class="diagram"><pre class="mermaid">
 sequenceDiagram
   participant S as Session
   participant B as Bridge
   participant Q as RenderQueue
-  participant P as Remotion / ffmpeg
-  S->>B: mfx render --label "animatic"<br/>-- npx remotion render …
+  participant P as Kinetograph / ffmpeg
+  S->>B: mfx render --label "animatic"<br/>-- kinetograph render …
   B->>Q: add(job)
   Q-->>S: {id: 3, state: waiting, renders_ahead: 1}
   Q->>Q: pump(): previous job finished
@@ -697,7 +697,7 @@ flowchart LR
       <table>
         <tbody>
           <tr><td><code>motion-design</code></td><td>the craft of motion: timing, easing, composition</td></tr>
-          <tr><td><code>remotion-motion</code></td><td>the Remotion template; <code>setup.mjs</code> installs it once per studio (was 748 MB per project)</td></tr>
+          <tr><td><code>remotion-motion</code></td><td>the video template (Remotion-API TSX, rendered by Kinetograph, no Chrome); <code>setup.mjs</code> installs it once per studio</td></tr>
           <tr><td><code>voiceover</code></td><td><code>vo.mjs</code> narration (ElevenLabs or Qwen3-TTS), checked by speech-to-text; <code>sound.mjs</code> effects and music beds</td></tr>
           <tr><td><code>music</code></td><td>the music engine (<code>strudel.mjs</code>): genre → blueprint → score → MIDI → an instrument per channel → audition → master, or your own master from the MIDI pack; every stage checked and written down in <code>MUSIC-SHEET.md</code></td></tr>
           <tr><td><code>final-pass</code></td><td><code>qc.mjs</code>: format, black or frozen frames, loudness, and a frame sheet Claude has to look at</td></tr>

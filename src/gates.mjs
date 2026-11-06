@@ -5,11 +5,18 @@
 //   - Every submission reports every error check its step runs, on exactly what it's sending.
 //   - Every note you pinned on a version is answered, one by one, in the next version.
 //   - Submitted files are copied out of the working folder: what you reviewed can't change afterwards.
-import { existsSync, mkdirSync, copyFileSync, realpathSync, statSync, readFileSync, appendFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, copyFileSync, realpathSync, statSync, readFileSync, appendFileSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join, extname } from 'node:path';
 import { paths, readJson, writeJson, withLock, isInside, UserError } from './studio.mjs';
 import { checksForStep, WORK_KINDS } from './pipelines.mjs';
+import { sceneGaps, gapsText } from './scenes.mjs';
 import { projectPaths, projectPipeline, loadProject, update, event, safeName, now } from './projects.mjs';
+import { firstWaits, scenesSubmitted } from './svc/lessons.mjs';
+import { framesHeld } from './svc/framestate.mjs';
+import { stillsHeld } from './svc/stills.mjs';
+import { musicHeld } from './svc/musicneed.mjs';
+import { fillV3Briefs } from './svc/v3briefs.mjs';
 
 const DONE = ['approved', 'done', 'skipped'];
 const KINDS = {
@@ -35,10 +42,21 @@ export function stepView(project, pipeline) {
   const byKey = Object.fromEntries(pipeline.steps.map((s) => [s.key, s]));
   // A skipped step counts as finished only once the steps it follows are: skipping never lets later work jump ahead.
   const finished = (k) => DONE.includes(stored[k]?.state) && (stored[k].state !== 'skipped' || (byKey[k]?.after || []).every(finished));
+  // Nothing is made before its gate (owner, 2026-10-18: "Nothing should be rendered until there's confirmation that
+  // everything looks good at the gates"): a step starts only when every step before it is approved, all the way back.
+  // The AI never runs ahead while the owner reviews.
+  const approvedChain = (k) => finished(k) && (byKey[k]?.after || []).every(approvedChain);
   return pipeline.steps.map((s) => {
     const rec = stored[s.key] || {};
-    const state = rec.state || (s.after.every(finished) ? 'ready' : 'blocked');
-    return { ...s, state, version: rec.version || 0, last_feedback: rec.last_feedback || null };
+    // The style frames wait for the look the owner asks for (mfx.look_brief), whatever else is
+    // approved.
+    const lookWaits = s.canvas === 'frame' && s.key === 'style-frames' && !project.mfx?.look_brief;
+    // The animatic waits for the motion the owner picks (mfx.motion_brief: a motion pack and rule packs, or "the AI decides").
+    const motionWaits = s.canvas === 'shot' && s.key === 'animatic' && !project.mfx?.motion_brief;
+    // The transitions wait for the owner's transition pick (mfx.transition_brief: a transition pack, or the library).
+    const cutsWait = s.canvas === 'transition' && s.key === 'transitions' && !project.mfx?.transition_brief;
+    const state = rec.state || (s.after.every(approvedChain) && !lookWaits && !motionWaits && !cutsWait ? 'ready' : 'blocked');
+    return { ...s, state, version: rec.version || 0, last_feedback: rec.last_feedback || null, ...(rec.skip_reason ? { skip_reason: rec.skip_reason } : {}) };
   });
 }
 
@@ -47,7 +65,10 @@ export function settle(project, pipeline) {
   if (!['queued', 'waiting', 'delivered'].includes(project.state)) return project.state;
   const steps = stepView(project, pipeline);
   const before = project.state;
-  if (steps.every((s) => DONE.includes(s.state))) project.state = 'delivered';
+  // Edit requests from the canvas start a session at once, whatever else waits for the owner.
+  // So does a request for three music themes (doc 33: they arrive in the chat).
+  if (project.canvas_edits > 0 || project.mfx?.samples_wanted) project.state = 'queued';
+  else if (steps.every((s) => DONE.includes(s.state))) project.state = 'delivered';
   else if (project.questions.some((q) => !q.answered_at)) project.state = 'waiting';
   else if (steps.some((s) => ['ready', 'working', 'changes'].includes(s.state))) project.state = 'queued';
   else project.state = 'waiting';
@@ -93,6 +114,11 @@ export function submit(root, id, stepKey, sub) {
   const step = findStep(pipeline, stepKey);
   if (step.review === 'internal') refuse(`${stepKey} is internal: finish it with mfx step done ${stepKey} --checks <file>`);
   if (!sub || typeof sub !== 'object') refuse('submission must be a JSON object');
+  // the shots: one per beat, always
+  if (step.canvas === 'shot' && !(pipeline.stage_set === 'v3' && firstWaits(root, id))) {
+    const gaps = sceneGaps(pp.work);
+    if (gaps.length) refuse(gapsText(gaps));
+  }
   // The step's state first (checked again under the lock below): the most useful refusal comes first.
   const early = stepView(loadProject(root, id), pipeline).find((s) => s.key === stepKey);
   if (early.state === 'blocked') refuse(`${stepKey} can't start yet: it runs after ${step.after.join(', ')}`);
@@ -138,7 +164,15 @@ export function submit(root, id, stepKey, sub) {
 
   const error_checks = validateChecks(root, id, stepKey, sub.error_checks);
 
-  return update(root, id, (p) => {
+  // The files are copied before the lock is taken (a big video can take longer than any writer should wait), into a
+  // staging folder that becomes reviews/<step>/v<N> with one rename under the lock.
+  const staging = join(pp.reviews, stepKey, `.incoming-${process.pid}-${randomBytes(4).toString('hex')}`);
+  const names = items.map((it, i) => (it.real ? `${String(i + 1).padStart(2, '0')}-${safeName(it.source)}` : null));
+  let res;
+  try {
+  mkdirSync(join(staging, 'files'), { recursive: true });
+  items.forEach((it, i) => { if (it.real) copyFileSync(it.real, join(staging, 'files', names[i])); });
+  res = update(root, id, (p) => {
     const view = stepView(p, pipeline).find((s) => s.key === stepKey);
     if (view.state === 'blocked') refuse(`${stepKey} can't start yet: it runs after ${step.after.join(', ')}`);
     if (view.state === 'in_review') refuse(`${stepKey} v${view.version} is already waiting for review`);
@@ -160,21 +194,27 @@ export function submit(root, id, stepKey, sub) {
 
     const version = view.version + 1;
     const dir = join(pp.reviews, stepKey, `v${version}`);
-    mkdirSync(join(dir, 'files'), { recursive: true });
+    // a submit that died before its record was written left this folder (the record never counted it): kept aside
+    if (existsSync(dir)) renameSync(dir, `${dir}.orphan-${Date.now()}`);
     const stored = items.map((it, i) => {
       if (!it.real) return { label: it.label, section: it.section, kind: it.kind, text: it.text, source: it.source || null };
-      const name = `${String(i + 1).padStart(2, '0')}-${safeName(it.source)}`;
-      copyFileSync(it.real, join(dir, 'files', name));
-      return { label: it.label, section: it.section, kind: it.kind, file: `reviews/${stepKey}/v${version}/files/${name}`, size: it.size, source: it.source };
+      return { label: it.label, section: it.section, kind: it.kind, file: `reviews/${stepKey}/v${version}/files/${names[i]}`, size: it.size, source: it.source };
     });
     const record = { step: stepKey, version, note: note.slice(0, 5000), questions, items: stored, error_checks, pin_changes, submitted_at: now() };
-    writeJson(join(dir, 'submission.json'), record);
+    writeJson(join(staging, 'submission.json'), record);
+    renameSync(staging, dir);
     p.steps[stepKey] = { ...(p.steps[stepKey] || {}), state: 'in_review', version, submitted_at: record.submitted_at };
     p.status = null;
     settle(p, pipeline);
     event(root, id, { event: 'SUBMITTED', step: stepKey, version, details: note.slice(0, 300) });
     return { step: stepKey, version, items: stored.length, project_state: p.state };
   });
+  } finally {
+    rmSync(staging, { recursive: true, force: true }); // only still there when the submit was refused or failed
+  }
+  // Motion: the scene just submitted waits for the owner's OK (whoever built it)
+  if (stepKey === 'animatic') { try { scenesSubmitted(root, id); } catch { /* no scenes plan */ } }
+  return res;
 }
 
 export function stepStart(root, id, stepKey) {
@@ -246,6 +286,9 @@ export function log(root, id, name, details) {
 export function needsYou(root, id, text) {
   if (!String(text || '').trim()) refuse('say what you need');
   return update(root, id, (p) => {
+    // A late call (a session stopped by Cancel can still get one out) never brings a finished or cancelled
+    // project back as paused: those states only change by the owner's own action.
+    if (['cancelled', 'delivered', 'draft'].includes(p.state)) return { project_state: p.state, ignored: true };
     p.state = 'paused';
     p.needs_you = { text: String(text).slice(0, 2000), at: now() };
     event(root, id, { event: 'NEEDS_YOU', details: p.needs_you.text });
@@ -281,8 +324,20 @@ export function proposeCheck(root, id, { title, how, example, work, same_as }) {
 export function respond(root, id, stepKey, version, { verdict, overall = '', notes = [], answers = {} }) {
   const pp = projectPaths(root, id);
   const pipeline = projectPipeline(root, id);
-  findStep(pipeline, stepKey);
-  if (!['approve', 'changes'].includes(verdict)) refuse('verdict must be approve or changes');
+  const target = findStep(pipeline, stepKey);
+  if (!['approve', 'changes', 'edit'].includes(verdict)) refuse('verdict must be approve, changes or edit');
+  // "Edit the video": instead of taking the final, the owner opens it in Mortiflix Studio (the delivering step only).
+  // v3 style frames one by one (rounds of 3): the Look is approved when every frame is OK (frames.ok), not before.
+  if (verdict === 'approve' && pipeline.stage_set === 'v3' && stepKey === 'style-frames' && framesHeld(root, id)) refuse('the style frames are checked one by one: press OK on each frame (frames.ok); the Look is approved when every frame is OK');
+  // v3 stills a group (scene) at a time: the step is approved when every still is OK (stills.ok), not before.
+  if (verdict === 'approve' && pipeline.stage_set === 'v3' && stepKey === 'stills' && stillsHeld(root, id)) refuse('the stills are checked a scene at a time: press OK on each still (stills.ok); the step is approved when every still is OK');
+  // v3 voice and music: the step is not approved until the music it makes is made and OK'd (Director 1, 2026-11-02:
+  // approved with no cue planned; owner 2026-11-03: "music is needed to be generated BEFORE we continue").
+  if (verdict === 'approve' && pipeline.stage_set === 'v3' && stepKey === 'voice') { const held = musicHeld(root, id); if (held) refuse(`the voice step makes the music too: ${held}`); }
+  if (verdict === 'edit' && !target.delivers) refuse('only the final can be edited in Mortiflix Studio');
+  // v3 scene by scene: approving a scene is motion.scene.approve, which builds the next scene. Asking for changes is fine.
+  if (verdict === 'approve' && pipeline.stage_set === 'v3' && stepKey === 'animatic' && firstWaits(root, id)) refuse('scenes are checked one by one: press OK on each scene (motion.scene.approve); the animatic is approved when every scene is OK');
+  if (verdict === 'edit' && !String(overall).trim()) overall = 'Edit the video: make the Mortiflix Studio project.';
   const dir = join(pp.reviews, stepKey, `v${version}`);
   if (!existsSync(join(dir, 'submission.json'))) refuse(`no ${stepKey} v${version}`);
   const sub = readJson(join(dir, 'submission.json'));
@@ -310,7 +365,7 @@ export function respond(root, id, stepKey, version, { verdict, overall = '', not
     return { id: q.id, text: q.text, answer: given ?? q.default, used_default: given === null };
   });
 
-  return update(root, id, (p) => {
+  const out = update(root, id, (p) => {
     const view = stepView(p, pipeline).find((s) => s.key === stepKey);
     if (view.state !== 'in_review' || view.version !== version) refuse(`${stepKey} v${version} isn't waiting for review (it's ${view.state}, v${view.version})`);
     const feedback = {
@@ -328,7 +383,9 @@ export function respond(root, id, stepKey, version, { verdict, overall = '', not
     writeJson(join(pp.work, 'feedback', `${stepKey}-v${version}.json`), feedback);
     p.steps[stepKey] = {
       ...(p.steps[stepKey] || {}),
-      state: verdict === 'approve' ? 'approved' : 'changes',
+      // Editing: the final is open in Mortiflix Studio. Nothing runs until the owner asks for a version or the big render.
+      state: verdict === 'approve' ? 'approved' : verdict === 'edit' ? 'editing' : 'changes',
+      ...(verdict === 'edit' ? { edit: true } : { edit: undefined }),
       version,
       decided_at: feedback.decided_at,
       last_feedback: { version, verdict, notes: cleanNotes.length },
@@ -338,9 +395,12 @@ export function respond(root, id, stepKey, version, { verdict, overall = '', not
       p.deliverables = sub.items.filter((it) => it.file).map((it) => ({ label: it.label, kind: it.kind, file: it.file, size: it.size }));
     }
     settle(p, pipeline);
-    event(root, id, { event: verdict === 'approve' ? 'APPROVED' : 'CHANGES_REQUESTED', actor: 'you', step: stepKey, version, details: cleanNotes.length ? `${cleanNotes.length} note(s)` : feedback.overall.slice(0, 200) });
+    event(root, id, { event: verdict === 'approve' ? 'APPROVED' : verdict === 'edit' ? 'EDIT_VIDEO' : 'CHANGES_REQUESTED', actor: 'you', step: stepKey, version, details: cleanNotes.length ? `${cleanNotes.length} note(s)` : feedback.overall.slice(0, 200) });
     return { step: stepKey, version, verdict, project_state: p.state };
   });
+  // v3: a Look or Motion that waits only for a pick the app never asks for starts with "the AI decides" (svc/v3briefs.mjs)
+  if (verdict === 'approve') { try { fillV3Briefs(root, id); } catch (e) { console.error(`v3 briefs ${id}: ${e.message}`); } }
+  return out;
 }
 
 // The owner changes their mind after approving: the step goes back for changes, with their note, and steps after it
@@ -400,15 +460,33 @@ export function answerQuestion(root, id, qid, value) {
   });
 }
 
+// Stop (cancel) is not final (owner 2026-11-03): a stopped project resumes like a paused one, from where it stopped.
+// Its steps, files and paid results stay as they were; only the session was ended (runner.stopProject).
 export function resume(root, id) {
   const pipeline = projectPipeline(root, id);
   return update(root, id, (p) => {
-    if (p.state !== 'paused') refuse(`not paused (${p.state})`);
+    if (!['paused', 'cancelled'].includes(p.state)) refuse(`not paused or stopped (${p.state})`);
     p.state = 'queued';
     p.needs_you = null;
     p.no_progress = 0;
+    p.last_failure = null;
     settle(p, pipeline);
     event(root, id, { event: 'RESUMED', actor: 'you' });
+  });
+}
+
+// "Let the AI take over" (T1): the one way a full session runs after a quick path gave up. The next run may use one.
+export function takeover(root, id) {
+  const pipeline = projectPipeline(root, id);
+  return update(root, id, (p) => {
+    if (p.state !== 'paused') refuse(`not paused (${p.state})`);
+    p.mfx = { ...(p.mfx || {}), takeover: true };
+    p.state = 'queued';
+    p.needs_you = null;
+    p.no_progress = 0;
+    p.last_failure = null;
+    settle(p, pipeline);
+    event(root, id, { event: 'RESUMED', actor: 'you', details: 'Let the AI take over: a full session may run' });
   });
 }
 
@@ -423,6 +501,8 @@ export function pause(root, id, why = 'Paused by you') {
 
 export function cancel(root, id) {
   return update(root, id, (p) => {
+    // a draft never started (Resume would skip project.start's checks); delivered and stopped have nothing to stop
+    if (['delivered', 'cancelled', 'draft'].includes(p.state)) refuse(`can't stop a ${p.state} project`);
     p.state = 'cancelled';
     event(root, id, { event: 'CANCELLED', actor: 'you' });
   });
@@ -450,6 +530,7 @@ export function submissions(root, id) {
   if (!existsSync(pp.reviews)) return out;
   for (const step of readdirSync(pp.reviews)) {
     for (const v of readdirSync(join(pp.reviews, step))) {
+      if (!/^v\d+$/.test(v)) continue; // a submit being staged (.incoming-*) or one that never counted (v<N>.orphan-*)
       const f = join(pp.reviews, step, v, 'submission.json');
       if (!existsSync(f)) continue;
       const sub = readJson(f);
@@ -465,3 +546,33 @@ export function feedbackFor(root, id, stepKey) {
 }
 
 const round = (v, d = 4) => Math.round(v * 10 ** d) / 10 ** d;
+
+// The final, rendered out of Mortiflix Studio after the owner's edits: it becomes the delivery. The file is copied into the
+// project's record (reviews/<final>/edited-N.mp4), so it can't change after the fact.
+export function deliverEdited(root, id, file) {
+  const pp = projectPaths(root, id);
+  const pipeline = projectPipeline(root, id);
+  const step = pipeline.steps.find((s) => s.delivers) || refuse('this pipeline has no delivering step');
+  if (loadProject(root, id).steps?.[step.key]?.state !== 'editing') refuse(`${step.name} isn't being edited in Mortiflix Studio`);
+  // The video is copied before the lock (it can be large), then renamed into place under it.
+  const dir = join(pp.reviews, step.key);
+  mkdirSync(dir, { recursive: true });
+  const staging = join(dir, `.incoming-${process.pid}-${randomBytes(4).toString('hex')}.mp4`);
+  try {
+  copyFileSync(file, staging);
+  return update(root, id, (p) => {
+    if (p.steps[step.key]?.state !== 'editing') refuse(`${step.name} isn't being edited in Mortiflix Studio`);
+    let n = 1;
+    while (existsSync(join(dir, `edited-${n}.mp4`))) n++;
+    renameSync(staging, join(dir, `edited-${n}.mp4`));
+    const rel = `reviews/${step.key}/edited-${n}.mp4`;
+    p.steps[step.key] = { ...p.steps[step.key], state: 'approved', edit: undefined, delivered_from: 'edit', decided_at: now() };
+    p.deliverables = [{ label: `${step.name} (edited in Mortiflix Studio)`, kind: 'video', file: rel, size: statSync(file).size }];
+    settle(p, pipeline);
+    event(root, id, { event: 'DELIVERED_FROM_EDIT', actor: 'you', step: step.key, details: rel });
+    return { delivered: rel, project_state: p.state };
+  });
+  } finally {
+    rmSync(staging, { force: true }); // only still there when the delivery was refused or failed
+  }
+}

@@ -1,0 +1,29 @@
+[package]
+name = "mortiflix-studio"
+version = "0.0.1"
+description = "Mortiflix Studio: a window on the local bridge"
+authors = ["Mortiflix"]
+license = "AGPL-3.0-only"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# serde_json, httparse and webkit2gtk are kept (unused) only so Cargo.lock stays identical to Singer's and
+# the shared target reuses its compiled dependencies. Drop them with a lock update when convenient.
+[dependencies]
+tauri = { version = "2", features = [] }
+serde_json = "1"
+httparse = "1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = "2"
+
+# signal handler: SIGTERM/SIGINT/SIGHUP stop the bridge this window started (already in Cargo.lock)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+strip = true

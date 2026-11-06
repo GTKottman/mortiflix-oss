@@ -10,7 +10,9 @@
 //   projects/<id>/voice/takes/<line>-<n>.wav  every take
 //   projects/<id>/voice/takes/takes.json      what each take measured, and which one is kept
 //   projects/<id>/voice/clips/<line>.wav      the kept take (+ <line>.json, the same report shape vo.mjs writes)
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync, readdirSync } from 'node:fs';
+//   voices/<person>/<project>-<line>.wav      every kept take, collected under the name of who recorded it
+//   voices/<person>/<project>-<line>.txt      the words of that take: wav + text pairs to train a voice model on later
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { join, extname, basename } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { readJson, writeJson, withLock, UserError } from './studio.mjs';
@@ -18,6 +20,24 @@ import { projectPaths } from './projects.mjs';
 
 export const MAX_TAKE_BYTES = 60 * 1024 * 1024; // ~10 minutes of 48 kHz 16-bit mono
 const LINE_ID = /^[A-Za-z0-9-]{1,40}$/;
+
+/** Where each person's kept takes are collected, for the whole studio. */
+export const voicesDir = (root) => join(root, 'voices');
+
+// A person's name as a folder name: letters, digits, spaces, dots, dashes and apostrophes, nothing else.
+function speakerName(name) {
+  const n = String(name || '').replace(/[^\p{L}\p{N} .'-]+/gu, ' ').replace(/\s+/g, ' ').replace(/^[.\s]+/, '').slice(0, 60).trim();
+  if (!n) throw new UserError('say who is recording (a name)');
+  return n;
+}
+
+/** Everyone who has recorded before, the most recent first. */
+export function speakers(root) {
+  const dir = voicesDir(root);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory())
+    .map((e) => ({ name: e.name, at: statSync(join(dir, e.name)).mtimeMs })).sort((a, b) => b.at - a.at).map((e) => e.name);
+}
 
 export function boothPaths(root, id) {
   const voice = join(projectPaths(root, id).work, 'voice');
@@ -128,9 +148,10 @@ function lineFor(root, id, lineId) {
   return line;
 }
 
-/** Saves a take (a WAV buffer) for a line. Returns the take record. */
-export function addTake(root, id, lineId, wav, { source = 'booth' } = {}) {
+/** Saves a take (a WAV buffer) for a line, with who recorded it when known. Returns the take record. */
+export function addTake(root, id, lineId, wav, { source = 'booth', speaker = null } = {}) {
   const line = lineFor(root, id, lineId);
+  const who = speaker ? speakerName(speaker) : null;
   if (wav.length > MAX_TAKE_BYTES) throw new UserError('that take is too long (over 10 minutes)');
   const info = wavInfo(wav);
   if (info.duration_ms < 200) throw new UserError('that take is under a fifth of a second: hold the button while you speak');
@@ -141,14 +162,17 @@ export function addTake(root, id, lineId, wav, { source = 'booth' } = {}) {
     const take_no = takes.filter((t) => t.line_id === lineId).reduce((n, t) => Math.max(n, t.take_no), 0) + 1;
     const file = `${lineId}-${take_no}.wav`;
     writeFileSync(join(bp.takes, file), wav);
-    const take = { line_id: lineId, take_no, file, ...info, flags: takeFlags(info, line), source, kept: false, at: new Date().toISOString() };
+    const take = { line_id: lineId, take_no, file, ...info, flags: takeFlags(info, line), source, ...(who ? { speaker: who } : {}), kept: false, at: new Date().toISOString() };
     takes.push(take);
     writeJson(bp.index, takes);
     return take;
   });
 }
 
-/** Keeps one take for its line: it becomes voice/clips/<line>.wav for vo.mjs build. */
+/**
+ * Keeps one take for its line: it becomes voice/clips/<line>.wav for vo.mjs build. A take that knows who recorded it
+ * is also collected under their name in voices/<person>/, with a text file of its words.
+ */
 export function keepTake(root, id, lineId, takeNo) {
   const line = lineFor(root, id, lineId);
   const bp = boothPaths(root, id);
@@ -164,9 +188,15 @@ export function keepTake(root, id, lineId, takeNo) {
     copyFileSync(join(bp.takes, take.file), join(bp.clips, `${lineId}.wav`));
     // The same report shape vo.mjs writes for a generated line. No word timings: build times this line as a whole.
     writeJson(join(bp.clips, `${lineId}.json`), {
-      id: lineId, engine: 'own voice', voice: 'the owner', script: line.script, take: take.take_no, seconds: take.duration_ms / 1000,
+      id: lineId, engine: 'own voice', voice: take.speaker || 'the owner', script: line.script, take: take.take_no, seconds: take.duration_ms / 1000,
       pass: true, peak_db: take.peak_db, rms_db: take.rms_db, flags: take.flags, words: [], transcript: null,
     });
+    if (take.speaker) {
+      const dir = join(voicesDir(root), take.speaker);
+      mkdirSync(dir, { recursive: true });
+      copyFileSync(join(bp.takes, take.file), join(dir, `${id}-${lineId}.wav`));
+      writeFileSync(join(dir, `${id}-${lineId}.txt`), `${line.script}\n`);
+    }
     return take;
   });
 }

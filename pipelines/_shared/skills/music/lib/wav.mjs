@@ -1,7 +1,7 @@
 // Reading the WAV files Strudel renders (PCM 16/24/32-bit or 32-bit float) and measuring them: level over a stretch of
 // time, and the mix balance a listener hears (how much energy sits in the low end and in the "mud" band, stereo width).
 // No dependencies; the numbers are reported as measurements, never as listening.
-import { readFileSync } from 'node:fs';
+import { readFileSync, openSync, writeSync, closeSync } from 'node:fs';
 
 export function readWav(fileOrBuf) {
   const b = Buffer.isBuffer(fileOrBuf) ? fileOrBuf : readFileSync(fileOrBuf);
@@ -9,7 +9,11 @@ export function readWav(fileOrBuf) {
   let fmt = null; let data = null;
   for (let o = 12; o + 8 <= b.length;) {
     const id = b.toString('latin1', o, o + 4); const size = b.readUInt32LE(o + 4);
-    if (id === 'fmt ') fmt = { format: b.readUInt16LE(o + 8), channels: b.readUInt16LE(o + 10), rate: b.readUInt32LE(o + 12), bits: b.readUInt16LE(o + 22) };
+    if (id === 'fmt ') {
+      fmt = { format: b.readUInt16LE(o + 8), channels: b.readUInt16LE(o + 10), rate: b.readUInt32LE(o + 12), bits: b.readUInt16LE(o + 22) };
+      // WAVE_FORMAT_EXTENSIBLE (hound, many tools): the real format is the first two bytes of the sub-format GUID
+      if (fmt.format === 0xfffe && size >= 40) fmt.format = b.readUInt16LE(o + 8 + 24);
+    }
     if (id === 'data') { data = b.subarray(o + 8, Math.min(b.length, o + 8 + size)); break; }
     o += 8 + size + (size % 2);
   }
@@ -72,4 +76,49 @@ export function mixBalance(wav) {
   if (mudPct > MIX_TARGETS.mudPct) notes.push(`muddy: ${mudPct}% of the energy sits in 150-400 Hz (aim for under ${MIX_TARGETS.mudPct}%): high-pass or thin the pads and chords there`);
   if (widthDb < MIX_TARGETS.widthDb) notes.push(`narrow: the sides are ${widthDb} dB under the middle (aim for ${MIX_TARGETS.widthDb} dB or wider): pan the body parts apart, keep bass and kick centred`);
   return { lowPct, mudPct, widthDb, notes };
+}
+
+// A long render put back together from its sections. `parts`: [{ file, at }] in time order, `at` = the frame the
+// section starts on in the whole piece; each section may run on past the next one's start (its ring-out), and those
+// frames are added in. Writes a 16-bit stereo WAV of exactly `frames` frames at `rate`, one section in memory at a time.
+// Returns { frames, peak, clipped } (clipped: samples over full scale, held at full scale).
+export function stitchWav(parts, out, { frames, rate }) {
+  const fd = openSync(out, 'w');
+  const header = Buffer.alloc(44);
+  const bytes = frames * 4;
+  header.write('RIFF', 0, 'latin1'); header.writeUInt32LE(36 + bytes, 4); header.write('WAVE', 8, 'latin1');
+  header.write('fmt ', 12, 'latin1'); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(2, 22);
+  header.writeUInt32LE(rate, 24); header.writeUInt32LE(rate * 4, 28); header.writeUInt16LE(4, 32); header.writeUInt16LE(16, 34);
+  header.write('data', 36, 'latin1'); header.writeUInt32LE(bytes, 40);
+  writeSync(fd, header);
+  let carry = [new Float32Array(0), new Float32Array(0)];
+  let peak = 0; let clipped = 0; let written = 0;
+  try {
+    for (let i = 0; i < parts.length; i++) {
+      const wav = readWav(parts[i].file);
+      if (wav.rate !== rate) throw new Error(`${parts[i].file}: ${wav.rate} Hz, the rest is ${rate} Hz`);
+      if (parts[i].at !== written) throw new Error(`section ${i + 1} starts at frame ${parts[i].at}, but ${written} frames are written`);
+      const end = i + 1 < parts.length ? parts[i + 1].at : frames;
+      const len = Math.max(0, end - written);
+      const left = wav.channels[0]; const right = wav.channels[1] || wav.channels[0];
+      const seg = Buffer.alloc(len * 4);
+      const next = [new Float32Array(Math.max(0, left.length - len, carry[0].length - len)), null];
+      next[1] = new Float32Array(next[0].length);
+      for (const [c, src] of [[0, left], [1, right]]) {
+        for (let k = 0; k < len; k++) {
+          let v = (k < src.length ? src[k] : 0) + (k < carry[c].length ? carry[c][k] : 0);
+          const a = Math.abs(v); if (a > peak) peak = a;
+          if (a > 1) { clipped++; v = Math.sign(v); }
+          seg.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(v * 32767))), (k * 2 + c) * 2);
+        }
+        for (let k = 0; k < next[c].length; k++) next[c][k] = (len + k < src.length ? src[len + k] : 0) + (len + k < carry[c].length ? carry[c][len + k] : 0);
+      }
+      writeSync(fd, seg);
+      written += len;
+      carry = next;
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return { frames: written, peak: +peak.toFixed(4), clipped };
 }

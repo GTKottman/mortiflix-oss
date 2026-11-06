@@ -129,3 +129,11 @@ scripts it brings: a pipeline's skills run in your sessions, so read them before
 A pull request with the folder in `pipelines/` (and any new shared skill in `pipelines/_shared/skills/`). Include a
 line in the README table, and say in the PR what you made with it. Assets in examples must be yours or clearly
 licensed.
+
+## Every project's skills file
+
+Before every session Mortiflix writes `SKILLS.md` in the project folder (src/skills.mjs): every skill the session has
+(the pinned pipeline's and the studio's), every tool (browser, music engine, narration, render queue, Chrome, Blender)
+and every MCP server, each ready or not set up with its fix. It is read from exactly what was installed, so it never
+disagrees with what the session gets. The canvas's Import tab shows it; clicking a skill shows its SKILL.md from the
+project's record (never the working folder).

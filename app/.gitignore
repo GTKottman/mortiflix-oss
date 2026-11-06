@@ -1,0 +1,5 @@
+node_modules
+web/app/
+shell/bundle-res/
+shell/dist/
+shell/src-tauri/gen/

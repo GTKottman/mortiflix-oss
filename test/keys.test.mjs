@@ -23,13 +23,16 @@ test('keys: which a project needs follows the backend and the narration engine',
   const root = tempStudio(t);
   const explainer = findPipeline(root, 'explainer');
   assert.deepEqual(keys.keysFor(root, { backend: 'demo', pipeline: explainer }), []);
+  // ElevenLabs is the default narration engine: a fresh studio needs its key for narrated work
+  assert.deepEqual(keys.keysFor(root, { backend: 'claude-code', pipeline: explainer }), ['elevenlabs']);
+  saveVoice(root, { engine: 'none' });
   assert.deepEqual(keys.keysFor(root, { backend: 'claude-code', pipeline: explainer }), []);
   assert.deepEqual(keys.keysFor(root, { backend: 'anthropic-api', pipeline: explainer }), ['anthropic']);
   saveVoice(root, { engine: 'elevenlabs' });
   assert.deepEqual(keys.keysFor(root, { backend: 'claude-code', pipeline: explainer }), ['elevenlabs']);
   // Only work that makes sound needs the narration key.
   assert.deepEqual(keys.keysFor(root, { backend: 'claude-code', steps: explainer.steps.filter((s) => s.key === 'script') }), []);
-  saveVoice(root, { engine: 'qwen' });
+  saveVoice(root, { engine: 'own' });
   assert.deepEqual(keys.keysFor(root, { backend: 'claude-code', pipeline: explainer }), []);
 });
 
@@ -39,6 +42,7 @@ test('keys: saved mode 600, reported by where they come from, never by value', (
   keys.saveKey(root, 'elevenlabs', '  xi-secret  ');
   assert.equal(mode(paths(root).secrets), 0o600);
   assert.equal(keys.keySource(root, 'elevenlabs'), 'saved');
+  saveVoice(root, { engine: 'none' });
   assert.equal(sessionVoiceEnv(root).ELEVENLABS_API_KEY, undefined); // narration is off: sessions don't get it
   saveVoice(root, { engine: 'elevenlabs' });
   assert.equal(sessionVoiceEnv(root).ELEVENLABS_API_KEY, 'xi-secret');

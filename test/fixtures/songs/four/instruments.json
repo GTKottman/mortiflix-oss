@@ -1,0 +1,3 @@
+{ "parts": [ { "channel": 2, "role": "Bass", "sound": "sawtooth", "set": ".lpf(600)", "gain": 0.8, "pan": 0 },
+             { "channel": 3, "role": "Keys", "sound": "triangle", "gain": 0.5, "pan": -0.3 },
+             { "channel": 10, "role": "Drums", "gain": 0.9, "kit": { "36": { "sound": "sine", "set": ".note(31).decay(.3)" }, "38": { "sound": "pink", "set": ".decay(.12)", "gain": 0.6 }, "42": { "sound": "white", "set": ".decay(.04)" }, "46": { "sound": "white", "set": ".decay(.2)" } } } ] }

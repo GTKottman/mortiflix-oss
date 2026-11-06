@@ -24,7 +24,7 @@ test('demo backend: brief to delivered, through the real bridge, with a round of
   assert.equal(project.state, 'waiting');
   const v1 = latest(root, p.id, 'directions');
   assert.equal(v1.version, 1);
-  assert.equal(v1.items.length, 3);
+  assert.equal(v1.items.length, 4);
 
   // The session brief was written, with the pinned pipeline and its skills beside it.
   const work = projectPaths(root, p.id).work;

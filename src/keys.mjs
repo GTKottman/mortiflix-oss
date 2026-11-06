@@ -1,7 +1,7 @@
 // The studio's keys in one place: what each one is for, when a project needs it, where it's kept, and a free check
 // that it works. Values live in secrets.json (mode 600, in the studio folder) and are never printed, served or logged.
 // Extra keys for sessions (anything a pipeline's tools read from the environment) live in session.env, also mode 600.
-import { readSecret, writeSecret, loadConfig, readSessionEnv, writeSessionEnv, UserError } from './studio.mjs';
+import { readSecret, writeSecret, loadConfig, readSessionEnv, writeSessionEnv, UserError, withLock, paths } from './studio.mjs';
 import { loadProject, projectPipeline } from './projects.mjs';
 import { stepView } from './gates.mjs';
 import { credentials as anthropicCredentials } from './backends/anthropic-api.mjs';
@@ -21,7 +21,7 @@ export const KEYS = {
     secret: 'elevenlabs_api_key',
     env: 'ELEVENLABS_API_KEY',
     get: 'elevenlabs.io › Developers › API keys',
-    for: 'narration, sound effects and music with ElevenLabs. Not needed for local narration (Qwen3-TTS) or none.',
+    for: 'narration, sound effects and music with ElevenLabs. The only generated voice: needed unless you narrate yourself or use none.',
   },
   uploadpost: {
     name: 'Upload-Post API key',
@@ -136,7 +136,10 @@ export function setSessionKey(root, name, value) {
   if (Object.values(KEYS).some((k) => k.env === name)) throw new UserError(`${name} has its own place: \`mortiflix keys\` (or Settings › Keys)`);
   const v = value ? String(value).trim() : '';
   if (/[\r\n]/.test(v)) throw new UserError('a key is one line');
-  const env = readSessionEnv(root);
-  if (v) env[name] = v; else delete env[name];
-  writeSessionEnv(root, env);
+  // read, change and write under the lock: the CLI and the service may both set a key at once
+  withLock(`${paths(root).sessionEnv}.lock`, () => {
+    const env = readSessionEnv(root);
+    if (v) env[name] = v; else delete env[name];
+    writeSessionEnv(root, env);
+  });
 }

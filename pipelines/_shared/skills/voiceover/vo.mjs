@@ -1,18 +1,19 @@
 #!/usr/bin/env node
-// vo.mjs: narration for a video, in the voice the studio set up (ElevenLabs, Qwen3-TTS on this machine's GPU, or the
-// owner's own voice from the recording booth).
+// vo.mjs: narration for a video, in the voice the studio set up (ElevenLabs, or the owner's own voice from the
+// recording booth). ElevenLabs is the only generated voice: there is no local voice (removed 2026-11-01).
 //
 //   node .claude/skills/voiceover/vo.mjs check
-//   node .claude/skills/voiceover/vo.mjs speak voice/lines.json [--only id,id] [--max-takes 3] [--jobs N]
-//   node .claude/skills/voiceover/vo.mjs build voice/lines.json [--gap 0.4]     → voice/voice.wav + voice/timing.json
+//   node .claude/skills/voiceover/vo.mjs speak voice/lines.json [--only id,id] [--max-takes 3] [--jobs N] [--new-take]
+//   node .claude/skills/voiceover/vo.mjs build voice/lines.json [--gap 0.4] [--no-trim] → voice/voice.wav + voice/timing.json
+//        (each clip is trimmed to its words, 0.06 s before the first and 0.12 s after the last, when the check timed them)
 //
 // voice/lines.json: [{ "id": "b01-1", "text": "[warm] The words as spoken.", "script": "The words as spoken.", "gap_after": 0.5 }]
-//   text   what the voice reads (ElevenLabs v4 takes [audio tags] and "/IPA/"; the local voice reads `script` if given)
+//   text   what the voice reads (ElevenLabs v4 takes [audio tags] and "/IPA/")
 //   script the same words spelled normally, for the check (needed when text has tags or IPA)
 //
 // The voice comes from the studio's settings ($MFX_VOICE); keys are in the environment, never printed.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, copyFileSync, rmSync } from 'node:fs';
 import { join, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -21,6 +22,16 @@ const [cmd, file] = args;
 const opt = (name, def = null) => { const i = args.indexOf(`--${name}`); return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : def; };
 const die = (msg) => { console.error(`vo: ${msg}`); process.exit(1); };
 const OUT = 'voice';
+
+// --new-take (a retake of a line that already has one): a fresh seed from take 1, and a new file next to the old takes
+// (voice/takes/<id>-t<N>), so nothing is overwritten and the old take stays to go back to.
+const fresh = args.includes('--new-take');
+const takeIdx = (id, n) => {
+  if (!fresh) return n;
+  let have = 0;
+  try { have = readdirSync(join(OUT, 'takes')).filter((f) => f.startsWith(`${id}-t`) && /^t\d+\.(wav|mp3|opus)$/.test(f.slice(id.length + 1))).length; } catch { /* no takes yet */ }
+  return n + have;
+};
 
 const voice = (() => { try { return JSON.parse(process.env.MFX_VOICE || '{}'); } catch { return {}; } })();
 const engine = voice.engine || 'none';
@@ -48,31 +59,11 @@ function lines() {
 
 // The words as they should be heard: tags and IPA out, spelled normally.
 const heard = (l) => String(l.script || l.text).replace(/\[[^\]]*\]/g, ' ').replace(/"?\/[^/\s][^/]*\/"?/g, ' ');
-const words = (s) => String(s).toLowerCase().replace(/[’']/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(' ').filter(Boolean);
-
-// How much of the script was said: matched words (longest common subsequence) and the longest run left out or added.
-function compare(script, transcript) {
-  const a = words(script), b = words(transcript);
-  const dp = Array.from({ length: a.length + 1 }, () => new Int32Array(b.length + 1));
-  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
-  let i = 0, j = 0, missing = 0, extra = 0, maxMissing = 0, maxExtra = 0;
-  while (i < a.length || j < b.length) {
-    if (i < a.length && j < b.length && a[i] === b[j]) { i++; j++; missing = 0; extra = 0; }
-    else if (j >= b.length || (i < a.length && dp[i + 1][j] >= dp[i][j + 1])) { i++; maxMissing = Math.max(maxMissing, ++missing); extra = 0; }
-    else { j++; maxExtra = Math.max(maxExtra, ++extra); missing = 0; }
-  }
-  const matched = dp[0][0];
-  return { similarity: a.length + b.length ? Math.round((2 * matched / (a.length + b.length)) * 1000) / 1000 : 1, longest_missing: maxMissing, longest_extra: maxExtra };
-}
-
-function judge(l, t) {
-  const c = compare(heard(l), t.text);
-  const problems = [];
-  if (c.similarity < Number(opt('threshold', 0.92))) problems.push(`said ${Math.round(c.similarity * 100)}% of the words right`);
-  if (c.longest_missing >= 3) problems.push(`${c.longest_missing} words in a row missing`);
-  if (c.longest_extra >= 3) problems.push(`${c.longest_extra} extra words in a row`);
-  if (t.events?.length) problems.push(`non-speech sounds: ${t.events.join(', ')} (a tag became a sound effect?)`);
-  return { pass: !problems.length, compare: c, problems };
+// Judging lives in $MFX_HOME/src/voice/judge.mjs (casing, punctuation, digits and split names never fail a take).
+let judgeLib = null;
+const loadJudge = async () => { judgeLib ||= await lib('judge.mjs'); };
+function judge(l, t) { // loadJudge() has run at the start of every speak
+  return judgeLib.judge(heard(l), t.text, { events: t.events, threshold: Number(opt('threshold', 0.92)) });
 }
 
 function duration(f) {
@@ -113,6 +104,19 @@ async function elevenlabs() {
   const api = async (path, init = {}) => {
     const res = await fetch(new URL(path, base), { ...init, headers: { 'xi-api-key': key, ...(init.headers || {}) } });
     if (!res.ok) throw new Error(`ElevenLabs ${res.status} ${(await res.text()).slice(0, 300)}`);
+    // the studio's usage ledger: every paid call (speech, the speech-to-text check), credits from the response header
+    const kind = /\/text-to-speech\//.test(String(path)) ? 'tts' : /\/speech-to-text/.test(String(path)) ? 'scribe check' : null;
+    if (kind) {
+      try {
+        const { bookSpend, costHeader } = await lib('spend.mjs');
+        const real = costHeader(res);
+        let chars = null;
+        try { chars = JSON.parse(init.body)?.text?.length ?? null; } catch { /* a form body */ }
+        const model = kind === 'tts' ? (cfg.model_id || null) : (cfg.check_model || 'scribe_v2');
+        const flash = /flash|turbo/i.test(String(model));
+        bookSpend({ kind, model, credits: real ?? (kind === 'tts' && chars !== null ? (flash ? chars / 2 : chars) : null), estimated: real === null && kind === 'tts' && chars !== null });
+      } catch { /* the call still counts */ }
+    }
     return res;
   };
   return { el, cfg, api };
@@ -137,11 +141,33 @@ async function listenEleven({ api, cfg }, path, l) {
   };
 }
 
+// The cast (voice/cast.json, src/svc/voicecast.mjs): a line's `role` picks its voice, model, settings and clip gain.
+// A line may also carry its own stability. Lines without a role (or roles not in the cast) use the studio's voice.
+function castOf() {
+  try { return JSON.parse(readFileSync(join(OUT, 'cast.json'), 'utf8')).cast || []; } catch { return []; }
+}
+function roleCfg(cfg, l, cast = castOf()) {
+  const c = cast.find((x) => x.role === (l.role || 'narrator'));
+  const out = { ...cfg };
+  if (c) {
+    if (c.voice_id) out.voice_id = c.voice_id;
+    if (c.name) out.voice_name = c.name;
+    if (c.model) out.model_id = c.model;
+    for (const k of ['stability', 'similarity_boost', 'style', 'speed', 'use_speaker_boost']) if (c.settings?.[k] !== undefined) out[k] = c.settings[k];
+  }
+  if (Number.isFinite(l.stability)) out.stability = l.stability;
+  return out; // eleven_v4 drops style and speed in el.voiceSettings, so they are stored but never sent
+}
+const gainOf = (l, cast) => Number(cast.find((x) => x.role === (l.role || 'narrator'))?.gain_db) || 0;
+
 async function speakEleven(list) {
+  await loadJudge();
   const ctx = await elevenlabs();
-  const { el, cfg, api } = ctx;
-  if (!cfg.voice_id) die('no ElevenLabs voice chosen: pick one in the studio\'s Settings (or `mortiflix voice`), then run again. mfx needs-you');
-  const maxTakes = Number(opt('max-takes', 3));
+  const { el, api } = ctx;
+  const cast = castOf();
+  const cfg = ctx.cfg;
+  if (!cfg.voice_id && !cast.some((c) => c.voice_id)) die('no ElevenLabs voice chosen: pick one in the studio\'s Settings (or `mortiflix voice`), then run again. mfx needs-you');
+  const maxTakes = Number(opt('max-takes', 2)); // each ElevenLabs take is paid: take 1, a re-spelling, then one more at most
   const all = JSON.parse(readFileSync(file, 'utf8'));
   const fmt = cfg.output_format || 'mp3_44100_128';
   const ext = fmt.startsWith('wav') ? '.wav' : fmt.startsWith('opus') ? '.opus' : fmt.startsWith('pcm') ? '.pcm' : '.mp3';
@@ -152,6 +178,8 @@ async function speakEleven(list) {
   const report = {};
   await pool(list, jobs, async (l) => {
     const k = all.findIndex((x) => x.id === l.id);
+    const cfg = roleCfg(ctx.cfg, l, cast);
+    if (!cfg.voice_id) { report[l.id] = { pass: false, problems: [`no voice for role ${l.role || 'narrator'}`] }; return; }
     for (let n = 1; n <= maxTakes; n++) {
       const seed = Math.floor(Math.random() * 4294967295);
       const body = el.requestBody(cfg, l.text, { previous_text: k > 0 ? all[k - 1].text : undefined, next_text: k < all.length - 1 ? all[k + 1].text : undefined, seed });
@@ -159,13 +187,13 @@ async function speakEleven(list) {
       try {
         res = await api(`/v1/text-to-speech/${encodeURIComponent(cfg.voice_id)}?output_format=${fmt}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       } catch (e) { report[l.id] = { pass: false, problems: [e.message] }; if (/40[13]|quota|credits/i.test(e.message)) break; continue; }
-      const take = join(OUT, 'takes', `${l.id}-t${n}${ext}`);
+      const take = join(OUT, 'takes', `${l.id}-t${takeIdx(l.id, n)}${ext}`);
       writeFileSync(take, Buffer.from(await res.arrayBuffer()));
       let t = null, verdict = { pass: true, compare: null, problems: [] };
       if (cfg.check_model !== 'off') {
         try { t = await listenEleven(ctx, take, l); verdict = judge(l, t); } catch (e) { verdict = { pass: true, compare: null, problems: [], note: `not checked: ${e.message}` }; }
       }
-      const rep = { id: l.id, engine: `elevenlabs/${cfg.model_id}`, voice: cfg.voice_name || cfg.voice_id, take: n, seed, request_id: res.headers.get('request-id'), seconds: duration(take), ...verdict, words: t?.words || [], transcript: t?.text ?? null };
+      const rep = { id: l.id, role: l.role || 'narrator', engine: `elevenlabs/${cfg.model_id}`, voice: cfg.voice_name || cfg.voice_id, take: n, seed, request_id: res.headers.get('request-id'), seconds: duration(take), ...verdict, words: t?.words || [], transcript: t?.text ?? null };
       report[l.id] = rep;
       const best = report[`${l.id}:best`];
       if (verdict.pass || !best || (verdict.compare?.similarity ?? 0) > (best.compare?.similarity ?? 0)) { keep(l, take, rep); report[`${l.id}:best`] = rep; }
@@ -174,71 +202,6 @@ async function speakEleven(list) {
     }
   });
   finish(list, report);
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// Qwen3-TTS through ComfyUI, on this machine's GPU
-
-async function speakQwen(list) {
-  const q = await lib('qwen.mjs');
-  const cfg = { ...q.DEFAULTS, ...(voice.qwen || {}) };
-  const comfy = new q.ComfyUI({ url: cfg.url });
-  const st = await comfy.status();
-  if (!st.ok) die(`${st.reason} mfx needs-you`);
-  cfg.variant = q.ComfyUI.variant(st.models, cfg.model);
-  if (!st.voices.includes(cfg.voice)) die(`voice ${cfg.voice} isn't offered by this model (${st.voices.join(', ')})`);
-  const maxTakes = Number(opt('max-takes', 3));
-  mkdirSync(join(OUT, 'takes'), { recursive: true });
-  const report = {};
-  let todo = list;
-  for (let n = 1; n <= maxTakes && todo.length; n++) {
-    // Speak everything, then free the GPU, then listen to everything: the two models take turns on the card.
-    const made = [];
-    for (const l of todo) {
-      const seed = n === 1 ? 1 : Math.floor(Math.random() * 2 ** 31);
-      try {
-        const out = await comfy.run(q.speakGraph(cfg, heard(l).trim(), seed));
-        const f = out['3'].audio[0];
-        const raw = join(OUT, 'takes', `${l.id}-t${n}.${f.filename.split('.').pop()}`);
-        writeFileSync(raw, await comfy.file(f));
-        const take = join(OUT, 'takes', `${l.id}-t${n}.wav`);
-        run(['ffmpeg', '-y', '-loglevel', 'error', '-i', raw, '-ar', '48000', '-ac', '1', take]);
-        if (raw !== take) rmSync(raw, { force: true });
-        made.push({ l, take, seed });
-        console.log(`${l.id} take ${n}: spoken`);
-      } catch (e) { report[l.id] = { pass: false, problems: [e.message] }; console.log(`${l.id} take ${n}: ${e.message}`); }
-    }
-    await comfy.free();
-    const failed = [];
-    for (const { l, take, seed } of made) {
-      let t = null, verdict = { pass: true, compare: null, problems: [] };
-      if (cfg.check && st.can_listen) {
-        try { t = await listenQwen(comfy, q, cfg, take, `${l.id}-t${n}`); verdict = judge(l, t); } catch (e) { verdict = { pass: true, compare: null, problems: [], note: `not checked: ${e.message}` }; }
-      }
-      const rep = { id: l.id, engine: `qwen3-tts/${cfg.variant} (local)`, voice: cfg.voice, take: n, seed, seconds: duration(take), ...verdict, words: t?.words || [], transcript: t?.text ?? null };
-      const best = report[`${l.id}:best`];
-      if (verdict.pass || !best || (verdict.compare?.similarity ?? 0) > (best.compare?.similarity ?? 0)) { keep(l, take, rep); report[`${l.id}:best`] = rep; }
-      report[l.id] = rep;
-      console.log(`${l.id} take ${n}: ${verdict.pass ? 'ok' : verdict.problems.join('; ')}${verdict.note ? ` (${verdict.note})` : ''}`);
-      if (!verdict.pass) failed.push(l);
-    }
-    await comfy.free();
-    todo = failed;
-  }
-  finish(list, report);
-}
-
-async function listenQwen(comfy, q, cfg, path, name) {
-  const form = new FormData();
-  form.append('image', new Blob([readFileSync(path)]), `${name}.wav`);
-  form.append('subfolder', 'mortiflix');
-  form.append('type', 'input');
-  const res = await fetch(`${comfy.url}/upload/image`, { method: 'POST', body: form });
-  if (!res.ok) throw new Error(`upload ${res.status}`);
-  const up = await res.json();
-  const out = await comfy.run(q.listenGraph(cfg, up.subfolder ? `${up.subfolder}/${up.name}` : up.name));
-  const d = JSON.parse(out['4'].text[0]);
-  return { engine: `qwen3-asr/${cfg.asr_model} (local)`, text: d.text || '', words: (d.segments || []).flatMap((s) => s.words || []).map((w) => ({ text: w.text, start: Number(w.start), end: Number(w.end) })), events: [] };
 }
 
 function finish(list, report) {
@@ -279,16 +242,30 @@ function build() {
   mkdirSync(join(OUT, 'build'), { recursive: true });
   const parts = [];
   const timing = [];
+  const cast = castOf();
   let t = 0;
   for (const l of list) {
     const clip = ['.wav', '.mp3', '.flac', '.opus'].map((e) => join(OUT, 'clips', `${l.id}${e}`)).find(existsSync);
     if (!clip) die(`no clip for ${l.id}: speak it first`);
     const wav = join(OUT, 'build', `${l.id}.wav`);
-    run(['ffmpeg', '-y', '-loglevel', 'error', '-i', clip, '-ar', '48000', '-ac', '1', wav]);
-    const d = duration(wav);
+    const gain = gainOf(l, cast); // the role's clip gain, in dB
+    const gainFx = gain ? `,volume=${gain}dB` : '';
     const meta = existsSync(join(OUT, 'clips', `${l.id}.json`)) ? JSON.parse(readFileSync(join(OUT, 'clips', `${l.id}.json`), 'utf8')) : {};
-    const ws = (meta.words || []).map((w) => ({ text: w.text, start: r3(t + w.start), end: r3(t + w.end) }));
-    timing.push({ id: l.id, text: heard(l).replace(/\s+/g, ' ').trim(), start: r3(t), end: r3(t + d), words: ws, timing: ws.length ? 'words' : 'line' });
+    // The dead air at a take's edges (up to 0.6 s on ElevenLabs) cut away: from just before the first word to just
+    // after the last, with 20 ms fades so the cut never clicks. Untimed lines are kept whole.
+    const timed = (meta.words || []).filter((w) => Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start);
+    const full = duration(clip);
+    const cut = !args.includes('--no-trim') && timed.length
+      ? [Math.max(0, timed[0].start - 0.06), Math.min(full || Infinity, timed.at(-1).end + 0.12)]
+      : null;
+    if (cut && cut[1] - cut[0] > 0.2) {
+      const len = cut[1] - cut[0];
+      run(['ffmpeg', '-y', '-loglevel', 'error', '-ss', String(cut[0]), '-t', String(len), '-i', clip, '-af', `afade=t=in:d=0.02,afade=t=out:st=${Math.max(0, len - 0.02)}:d=0.02${gainFx}`, '-ar', '48000', '-ac', '1', wav]);
+    } else run(['ffmpeg', '-y', '-loglevel', 'error', '-i', clip, ...(gain ? ['-af', `volume=${gain}dB`] : []), '-ar', '48000', '-ac', '1', wav]);
+    const d = duration(wav);
+    const off = cut && cut[1] - cut[0] > 0.2 ? cut[0] : 0;
+    const ws = (meta.words || []).map((w) => ({ text: w.text, start: r3(t + Math.max(0, w.start - off)), end: r3(t + Math.min(d, w.end - off)) }));
+    timing.push({ id: l.id, role: l.role || 'narrator', text: heard(l).replace(/\s+/g, ' ').trim(), start: r3(t), end: r3(t + d), words: ws, timing: ws.length ? 'words' : 'line' });
     parts.push(wav);
     t += d;
     const gap = l.gap_after ?? defaultGap;
@@ -322,12 +299,6 @@ async function check() {
       sound_effects: cfg.sfx !== false, music: Boolean(cfg.music),
       v4_rules: el.isV4(cfg.model_id) ? 'audio tags in [brackets], IPA as "/.../", CAPITALS for emphasis, no SSML, only stability + similarity' : null,
     }, null, 2));
-  } else if (engine === 'qwen') {
-    const q = await lib('qwen.mjs');
-    const cfg = { ...q.DEFAULTS, ...(voice.qwen || {}) };
-    const st = await new q.ComfyUI({ url: cfg.url }).status();
-    console.log(JSON.stringify({ engine, ...st, chosen: { model: cfg.model, voice: cfg.voice, language: cfg.language, instruct: /1\.7B/.test(cfg.model) ? cfg.instruct : '(the 0.6B model takes no instructions)' }, notes: 'tags and IPA are not read: write delivery into the instruction and spell names the way they sound' }, null, 2));
-    if (!st.ok) process.exitCode = 1;
   } else if (engine === 'own') {
     console.log(JSON.stringify({ engine, note: 'The owner narrates in their own voice. Write voice/lines.json, then `speak` lists the lines still to record and the mfx needs-you text for the owner; after they record, `speak` passes and `build` makes the track (timed per line).' }, null, 2));
   } else {
@@ -339,7 +310,7 @@ if (cmd === 'check') await check();
 else if (cmd === 'speak') {
   const list = lines();
   if (engine === 'elevenlabs') await speakEleven(list);
-  else if (engine === 'qwen') await speakQwen(list);
+  else if (engine === 'qwen') die('the local voice (Qwen3-TTS) was removed: the studio narrates with ElevenLabs (Settings › Narration)');
   else if (engine === 'own') speakOwn(list);
   else die('no voice is set up in this studio (vo.mjs check)');
 } else if (cmd === 'build') build();

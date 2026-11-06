@@ -1,0 +1,18 @@
+{
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Mortiflix",
+    "shortDescription": "Make a video with AI, step by step",
+    "longDescription": "Mortiflix Studio: a window on the local Mortiflix bridge and service. Ships its own Node.js and ffmpeg; needs Claude Code and Git for Windows (offered on first run).",
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    }
+  }
+}

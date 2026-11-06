@@ -1,7 +1,7 @@
 {
   "slug": "explainer",
   "name": "Explainer video",
-  "description": "A 30 second to 2 minute motion design explainer: script, style frames, animatic, final. Built in Remotion.",
+  "description": "A 30 second to 2 minute motion design explainer: script, voice, style frames, transitions, animatic, music, final. Built in Kinetograph.",
   "makes": "video",
   "shared_skills": [
     "motion-design",
@@ -56,7 +56,7 @@
         "On-screen text and music only"
       ],
       "default": "Narrated",
-      "help": "Uses the studio's narration voice (Settings › Narration: ElevenLabs, or Qwen3-TTS on your own GPU). With none set up, the studio asks."
+      "help": "Uses the studio's narration voice (Settings \u203a Narration: ElevenLabs). With no ElevenLabs key, the studio says so and asks."
     },
     {
       "id": "music",
@@ -98,7 +98,22 @@
       ],
       "after": [
         "brief"
-      ]
+      ],
+      "canvas": "beat"
+    },
+    {
+      "key": "voice",
+      "name": "Voice",
+      "review": "audio",
+      "when": "voice",
+      "work": [
+        "audio"
+      ],
+      "after": [
+        "script"
+      ],
+      "describe": "The approved script read aloud, one voice line per sentence, with word timings. The owner checks each scene's voice (OK, Fix with a note, or a different voice) before anything is drawn.",
+      "canvas": "line"
     },
     {
       "key": "style-frames",
@@ -108,9 +123,10 @@
         "stills"
       ],
       "after": [
-        "brief"
+        "voice"
       ],
-      "describe": "Three to five finished-quality stills that fix the look. Runs beside the script."
+      "describe": "Three to five finished-quality stills that fix the look, made after the script and voice are approved, drawn by code in Kinetograph straight from your style pack.",
+      "canvas": "frame"
     },
     {
       "key": "transitions",
@@ -121,9 +137,9 @@
       ],
       "describe": "How each style frame becomes the next: for every cut, the object that carries it, the reason, a transition from the remotion-transitions library (or a new one inspired by it), and real in-between frames.",
       "after": [
-        "script",
         "style-frames"
-      ]
+      ],
+      "canvas": "transition"
     },
     {
       "key": "animatic",
@@ -136,7 +152,8 @@
       "after": [
         "transitions"
       ],
-      "describe": "Every beat timed to the narration with simple motion in the approved look. No music yet: the score is written to this timing next."
+      "describe": "Every beat timed to the approved narration with simple motion in the approved look, cut with the approved transitions. No music yet: the score is written to this timing next.",
+      "canvas": "shot"
     },
     {
       "key": "music",
@@ -162,7 +179,8 @@
       ],
       "after": [
         "music"
-      ]
+      ],
+      "waits_for_approval": true
     },
     {
       "key": "final",
@@ -259,7 +277,7 @@
       "applies_to": [
         "audio"
       ],
-      "how": "qc.mjs: integrated loudness -14 LUFS (±1) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
+      "how": "qc.mjs: integrated loudness -14 LUFS (\u00b11) for web, true peak at or below -1 dBTP, no clicks, pops or distortion when you listen through."
     },
     {
       "id": "sync",
@@ -308,6 +326,14 @@
         "motion"
       ],
       "how": "node .claude/skills/transition-board/board.mjs check passes: every cut names its carrier (the object or element that makes it happen) and why, uses a transition from the remotion-transitions library (or a new one that names the library transitions that inspired it) at a length inside its range, and lands on a named word. The video's cuts match the approved board."
+    },
+    {
+      "id": "flat-2d-buildable",
+      "title": "Flat 2D, buildable in Kinetograph",
+      "applies_to": [
+        "stills"
+      ],
+      "how": "Every frame is flat 2D motion design: solid colour shapes, clean edges, flat type. Nothing photographic, 3D-rendered, lit, textured or with depth of field: a realistic frame can't be rebuilt in Kinetograph. A frame that looks realistic or 3D is redrawn flatter before it's sent."
     }
   ]
 }

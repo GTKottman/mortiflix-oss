@@ -131,7 +131,8 @@ test('keys: the Upload-Post key is checked with a free call and never handed to 
   keys.saveKey(root, 'uploadpost', 'up-secret');
   assert.equal(keys.keySource(root, 'uploadpost'), 'saved');
   assert.ok(!JSON.stringify(keys.keyStatus(root)).includes('up-secret'));
-  assert.deepEqual(keys.keysFor(root, { backend: 'claude-code', steps: [{ work: ['motion', 'audio'] }] }), []);
+  // only the narration key (ElevenLabs, the default engine) is asked for: never Upload-Post's
+  assert.deepEqual(keys.keysFor(root, { backend: 'claude-code', steps: [{ work: ['motion', 'audio'] }] }), ['elevenlabs']);
   assert.throws(() => keys.setSessionKey(root, 'UPLOAD_POST_API_KEY', 'x'), /its own place/);
 });
 

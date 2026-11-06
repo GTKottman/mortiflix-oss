@@ -5,6 +5,7 @@ import { join, basename, resolve } from 'node:path';
 import { spawnSync, spawn } from 'node:child_process';
 import { studioRoot, ensureStudio, loadConfig, saveConfig, paths, readJson } from './studio.mjs';
 import { listPipelines, findPipeline, exportPipeline, addPipeline } from './pipelines.mjs';
+import { record, ttsCredits } from './svc/ledger.mjs';
 import { createProject, addIntakeFile, startProject, listProjects, loadProject, projectPaths, projectPipeline, readEvents } from './projects.mjs';
 import * as gates from './gates.mjs';
 import { Runner, BACKENDS } from './runner.mjs';
@@ -17,6 +18,7 @@ import * as rec from './record.mjs';
 import * as music from './music.mjs';
 import * as plat from './platform.mjs';
 import * as pub from './publish.mjs';
+import * as craft from './craft.mjs';
 
 const C = process.stdout.isTTY && !process.env.NO_COLOR
   ? { b: (s) => `\x1b[1m${s}\x1b[0m`, dim: (s) => `\x1b[2m${s}\x1b[0m`, acc: (s) => `\x1b[38;5;208m${s}\x1b[0m`, red: (s) => `\x1b[31m${s}\x1b[0m`, green: (s) => `\x1b[32m${s}\x1b[0m` }
@@ -26,8 +28,8 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
 
   ${C.b('Getting started')}
   mortiflix init [--backend claude-code|anthropic-api|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
-  mortiflix setup                                              the walkthrough: Claude, transitions, narration, music, assets, 3D
-  mortiflix setup <claude|transitions|narration|music|assets|3d>  one part (mortiflix setup status: where things stand)
+  mortiflix setup                                              the walkthrough: Claude, transitions, narration, music, your DAW, sound engine, assets, 3D, Craft apps
+  mortiflix setup <claude|transitions|narration|music|daw|daw-engine|assets|publish|3d|craft>  one part (mortiflix setup status: where things stand)
   mortiflix keys                                               add or change your keys (Anthropic, ElevenLabs, others)
   mortiflix doctor                                             check the tools a pipeline needs
   mortiflix demo                                               a full walk-through with placeholder work (free)
@@ -56,9 +58,8 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
   mortiflix serve [--port 4646] [--host 127.0.0.1]             the studio in your browser, with the runner
 
   ${C.b('Narration')}
-  mortiflix voice                                              what narrates your videos, and what this machine can run
+  mortiflix voice                                              what narrates your videos (ElevenLabs, your own voice, or none)
   mortiflix voice elevenlabs                                   set up ElevenLabs (key, voice, model)
-  mortiflix voice local                                        set up Qwen3-TTS on your GPU through ComfyUI
   mortiflix voice own                                          narrate in your own voice, recorded in the booth
   mortiflix voice none                                         no narration (on-screen text and music)
   mortiflix voice test ["a line to speak"]                     hear the current voice
@@ -70,9 +71,18 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
   mortiflix music [<project>]                                  where its music stands: the MIDI pack, your master, the music sheet
   mortiflix music <project> --midi <file.zip>                  save the MIDI pack (every channel, the arrangement, the cue sheet)
   mortiflix music <project> --import <file>                    your own master, made from the MIDI pack in your DAW (exported from bar 1)
+  mortiflix music <project> --song                             the mini DAW's song from the checked score (music/song.json + song.strudel.js)
 
   ${C.b('3D')}
   mortiflix blender [file.blend]                               open the studio's Blender, with its toolkits and Camera Flight
+
+  ${C.b('Craft apps')} (open-source remakes of the Adobe apps, each with an MCP server)
+  mortiflix craft                                              which are installed, and what each one is for
+  mortiflix craft install [all | <app>…]                       pull the official builds (checked against their SHA256SUMS)
+  mortiflix craft remove <app>                                 delete one from the studio
+  mortiflix craft open <app> [file]                            open one (e.g. a PSD a session made, in PhotoCraft)
+  mortiflix craft register                                     add their MCP servers to your own Claude Code (user scope)
+  mortiflix craft mcp-config                                   print their MCP servers as JSON (.mcp.json format)
 
   ${C.b('Settings')}
   mortiflix config [key [value]]                               show or change settings
@@ -86,6 +96,8 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
   ${C.b('Without a terminal')} (scripts, Claude Code)
   mortiflix setup install <${setup.TOOLS.join('|')}>
   mortiflix setup music <strudel|none> [--midi|--no-midi]
+  mortiflix setup daw <${Object.keys(setup.DAWS).join('|')}|none>
+  mortiflix setup browser [http://127.0.0.1:PORT|none] [--start "command"]   the studio browser sessions drive
   mortiflix setup assets <url>… | --clear
   mortiflix setup publish <uploadpost|none> [--profile <Upload-Post profile>]`;
 
@@ -116,6 +128,7 @@ export async function run(argv = process.argv.slice(2)) {
       case 'keys': return a.json ? (needStudio(root), json({ keys: keys.keyStatus(root), session_keys: keys.sessionKeyNames(root) })) : keysCmd(root, rest);
       case 'setup': return setupCmd(root, rest, a);
       case 'blender': needStudio(root); return console.log(`Opening ${setup.openBlender(root, rest)} with the studio's profile (Camera Flight: 3D Viewport › N › Flight).`);
+      case 'craft': return craftCmd(root, rest, a);
       case 'doctor': return doctor(root);
       case 'demo': return demo(root);
       case 'pipelines': return a.json ? json(pipelinesView(root)) : pipelines(root, rest, a);
@@ -223,11 +236,11 @@ async function init(root, a) {
   console.log(`  Backend: ${C.b(backend)} ${C.dim(BACKENDS[backend].available(loadConfig(root), root).detail)}`);
   if (backend === 'demo') console.log(C.dim('  (No Claude Code login or API key found: the demo backend makes placeholder work. Install Claude Code, or add an API key with `mortiflix keys`.)'));
   if (process.stdin.isTTY && !a.yes) {
-    console.log(`\n  Next, the setup walkthrough: what Mortiflix uses (Claude, transitions, narration, music, assets, 3D), why, and what it would`);
+    console.log(`\n  Next, the setup walkthrough: what Mortiflix uses (Claude, transitions, narration, music, assets, 3D, Craft apps), why, and what it would`);
     console.log('  install. Nothing installs without asking, and you can skip any part.');
     if (await confirm('  Set it up now?', true)) await setupWalk(root);
     else console.log(`  Any time: ${C.b('mortiflix setup')}`);
-  } else console.log(`\n  Next: ${C.b('mortiflix setup')} walks through Claude, transitions, narration, music, assets and 3D.`);
+  } else console.log(`\n  Next: ${C.b('mortiflix setup')} walks through Claude, rendering, transitions, narration, music, assets, 3D and the Craft apps.`);
   console.log(`\n  Then: ${C.b('mortiflix demo')} for a free walk-through, or ${C.b('mortiflix serve')} to open the studio in your browser.`);
 }
 
@@ -244,7 +257,7 @@ function doctor(root) {
     const r = b.available(config || loadConfig(root), root);
     row(r.ok, name, `${r.detail}${config?.backend === name ? '  ← in use' : ''}`);
   }
-  for (const [bin, why] of [['ffmpeg', 'renders, checks, the demo'], ['ffprobe', 'the final pass'], ['npx', 'Remotion'], ['git', 'installs the 3D toolkits and local narration']]) {
+  for (const [bin, why] of [['ffmpeg', 'renders, checks, the demo'], ['ffprobe', 'the final pass'], ['git', 'installs the 3D toolkits and local narration']]) {
     const found = plat.which(bin);
     row(Boolean(found) || bin === 'git', bin, found ? why : `${why}: not found${WINGET[bin] ? ` (winget install ${WINGET[bin]})` : ''}`);
   }
@@ -257,6 +270,7 @@ function doctor(root) {
     row(Boolean(k.source) || !k.in_use, k.id, k.source ? `${k.name}: ${k.source}${k.in_use ? '  ← in use' : ''}` : k.in_use ? `${k.name} missing: mortiflix keys` : `${k.name}: not set (optional)`);
   }
   const tools = setup.setupStatusSync(root);
+  row(tools.kinetograph.ok, 'kinetograph', tools.kinetograph.ok ? `${tools.kinetograph.detail}: renders every 2D shot, still and animatic` : `${tools.kinetograph.detail} (mortiflix setup rendering)`);
   for (const id of ['strudel', 'chrome', 'browser-harness', 'blender', 'blender-addons']) row(tools[id].ok || !['strudel', 'chrome'].includes(id) || tools.music.engine === 'none', id, tools[id].ok ? tools[id].detail : `${tools[id].detail} (mortiflix setup)`);
   const extra = keys.sessionKeyNames(root);
   row(true, 'session.env', extra.length ? `other keys for sessions: ${extra.join(', ')}` : 'no other keys (optional: mortiflix keys)');
@@ -747,13 +761,13 @@ function partHeader(part, i) {
 }
 
 // Installs one tool after saying what it is, where it goes and how big it is.
-async function offerInstall(root, id, { ask = true } = {}) {
+async function offerInstall(root, id, { ask = true, build = false } = {}) {
   const info = setup.TOOL_INFO[id];
   console.log(`  ${C.b(info.name)}: ${info.what}. Goes to ${info.where} (${info.size}).`);
   if (ask && !(await confirm('  Install it now?', true))) { console.log(C.dim('  Skipped.')); return false; }
   const started = Date.now();
   try {
-    const r = await setup.installTool(root, id, { log: (l) => console.log(C.dim(`    ${l}`)) });
+    const r = await setup.installTool(root, id, { build, log: (l) => console.log(C.dim(`    ${l}`)) });
     console.log(`  ${r.problems ? C.acc('●') : C.green('✔')} ${info.name}: ${r.detail || 'installed'}${r.problems ? ` (${r.problems})` : ''} ${C.dim(`${Math.round((Date.now() - started) / 1000)} s`)}`);
     return true;
   } catch (e) {
@@ -778,6 +792,13 @@ async function setupPart(root, id, st) {
     }
     return;
   }
+  if (id === 'rendering') {
+    if (st.kinetograph.ok) {
+      console.log(`  ${mark(true)} ${st.kinetograph.detail} (${st.kinetograph.path})`);
+      // Installing again puts back the pinned version when another one is there.
+    } else await offerInstall(root, 'kinetograph', { ask: false });
+    return;
+  }
   if (id === 'transitions') {
     if (st.transitions.ok) {
       console.log(`  ${mark(true)} ${st.transitions.detail} (${st.transitions.path})`);
@@ -787,23 +808,14 @@ async function setupPart(root, id, st) {
   }
   if (id === 'narration') {
     const v = voice.voiceConfig(root);
-    const local = st.gpu;
-    console.log(`  Now: ${C.b({ none: 'no narration', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer', own: 'your own voice' }[v.engine])}`);
-    console.log(`  1. ElevenLabs: their voices, paid per character. Needs an API key.`);
-    console.log(`  2. This computer: Qwen3-TTS through ComfyUI, free and private. ${local.fits ? C.green(local.reason) : C.red(local.reason)}`);
-    console.log('  3. No narration: on-screen text, music and sound.');
-    console.log('  4. Your own voice: you read the script line by line in the recording booth (web studio or terminal), or import files.');
+    console.log(`  Now: ${C.b({ none: 'no narration', elevenlabs: 'ElevenLabs', own: 'your own voice' }[v.engine])}`);
+    console.log(`  1. ElevenLabs: their voices, paid per character. Needs an API key. The default, and the only voice the studio generates.`);
+    console.log('  2. No narration: on-screen text, music and sound.');
+    console.log('  3. Your own voice: you read the script line by line in the recording booth (web studio or terminal), or import files.');
     const pick = (await prompterOnce(`  Which? ${C.dim(`[Enter keeps ${v.engine}]`)} `)).trim();
     if (pick === '1') { await voiceCmd(root, ['elevenlabs']); }
-    else if (pick === '2') {
-      if (!local.fits) return console.log(C.red('  This machine can\'t run it: pick ElevenLabs or none.'));
-      if (!st.comfyui.ok) {
-        if (st.comfyui.installed) { console.log('  The studio\'s ComfyUI is installed but not running: starting it.'); setup.startComfy(root); }
-        else if (!(await offerInstall(root, 'comfyui'))) return;
-      }
-      await voiceCmd(root, ['local']);
-    } else if (pick === '3') { voice.saveVoice(root, { engine: 'none' }); console.log('  Narration off.'); }
-    else if (pick === '4') await voiceCmd(root, ['own']);
+    else if (pick === '2') { voice.saveVoice(root, { engine: 'none' }); console.log('  Narration off.'); }
+    else if (pick === '3') await voiceCmd(root, ['own']);
     return;
   }
   if (id === 'music') {
@@ -818,6 +830,23 @@ async function setupPart(root, id, st) {
     const midi = await confirm('  Also deliver a MIDI pack with each video?', m.midi);
     setup.saveMusic(root, { engine: 'strudel', midi });
     return console.log(`  ${C.green('✔')} Music: Strudel${midi ? ' + MIDI pack' : ''}.`);
+  }
+  if (id === 'daw') {
+    const ids = Object.keys(setup.DAWS);
+    ids.forEach((d, i) => console.log(`  ${String(i + 1).padStart(2)}. ${setup.DAWS[d]}`));
+    console.log('   0. None: general steps for any DAW');
+    const v = (await prompterOnce(`  Which DAW do you finish music in? ${C.dim(`[Enter keeps ${st.daw.name || 'none'}]`)} `)).trim();
+    if (!v) return undefined;
+    const d = setup.saveDaw(root, v === '0' ? null : ids[Number(v) - 1] || v);
+    return console.log(`  ${C.green('✔')} ${d.id ? `${d.name}: every MIDI pack comes with its import steps.` : 'No DAW named: the import steps are general.'}`);
+  }
+  if (id === 'daw-engine') {
+    const e = st['daw-engine'];
+    console.log(`  ${mark(e.ok)} Sound engine: ${e.detail}${e.path ? ` (${e.path})` : ''}`);
+    if (e.ok) return undefined;
+    const missing = setup.engineBuildMissing();
+    if (missing.length) return console.log(C.dim(`  To build it, first: sudo pacman -S --needed ${missing.join(' ')} (then mortiflix setup daw-engine --build)`));
+    return offerInstall(root, 'daw-engine', { build: true });
   }
   if (id === 'assets') {
     const cur = setup.assetsConfig(loadConfig(root)).sites;
@@ -875,6 +904,65 @@ async function setupPart(root, id, st) {
     await offerInstall(root, 'blender-addons', { ask: !st['blender-addons'].ok });
     console.log(`  Open it yourself with ${C.b('mortiflix blender')} (Camera Flight is in the 3D Viewport › N › Flight).`);
   }
+  if (id === 'craft') {
+    showCraft(st.craft);
+    const have = st.craft.apps.filter((x) => x.installed).map((x) => x.id);
+    console.log(C.dim(`  Each is an open-source remake by the ArtCraft team (github.com/${craft.OWNER}), MIT or Apache-2.0, with its own MCP server.`));
+    const pick = (await prompterOnce(`  Which? ${C.dim(`all, none, or names (e.g. effectcraft photocraft)${have.length ? '; Enter keeps what\'s installed' : ''}`)} `)).trim().toLowerCase();
+    if (pick === 'none' || (!pick && !have.length)) return console.log(C.dim('  None: sessions work without them.'));
+    const apps = !pick ? have : pick === 'all' ? craft.APP_IDS : pick.split(/[\s,]+/).filter(Boolean);
+    craft.saveCraftApps(root, apps);
+    await offerInstall(root, 'craft', { ask: false });
+    console.log(`  Sessions get their MCP servers. For your own Claude Code: ${C.b('mortiflix craft register')}`);
+  }
+}
+
+// ---- the Craft apps ----
+
+function showCraft(st) {
+  for (const x of st.apps) {
+    console.log(`  ${x.installed ? C.green('✔') : C.dim('·')} ${x.name.padEnd(12)} ${C.dim(`${x.replaces}:`.padEnd(15))} ${x.use}${x.installed ? C.dim(` (${x.version})`) : ''}`);
+  }
+}
+
+async function craftCmd(root, [sub, ...args], a) {
+  needStudio(root);
+  if (!sub || sub === 'status') {
+    const st = craft.craftStatus(root);
+    if (a.json) return json(st);
+    console.log(C.b('The Craft apps'), C.dim(`(github.com/${craft.OWNER}, MIT or Apache-2.0)`));
+    showCraft(st);
+    return console.log(C.dim(`\n  Install: mortiflix craft install [all | ${craft.APP_IDS.slice(0, 3).join(' ')} …]`));
+  }
+  if (sub === 'install') {
+    ownerOnly();
+    const apps = !args.length ? craft.craftConfig(loadConfig(root)).apps : args.includes('all') ? craft.APP_IDS : args;
+    for (const id of apps) if (!craft.APP_IDS.includes(id)) throw new Error(`unknown app "${id}" (${craft.APP_IDS.join(', ')})`);
+    craft.saveCraftApps(root, [...new Set([...craft.APPS.filter((x) => craft.installed(root, x.id)).map((x) => x.id), ...apps])]);
+    const r = await craft.installCraft(root, { apps, log: (l) => console.log(C.dim(`    ${l}`)) });
+    console.log();
+    showCraft(r);
+    if (r.problems) console.log(C.red(`\n  ✖ ${r.problems}`));
+    return console.log(C.dim('\n  Sessions get their MCP servers. For your own Claude Code: mortiflix craft register'));
+  }
+  if (sub === 'remove') {
+    ownerOnly();
+    if (!args.length) throw new Error('mortiflix craft remove <app>…');
+    for (const id of args) craft.removeApp(root, id);
+    return console.log(`Removed ${args.join(', ')}.`);
+  }
+  if (sub === 'open') {
+    ownerOnly();
+    if (!args[0]) throw new Error('mortiflix craft open <app> [file]');
+    return console.log(`Opening ${craft.openApp(root, args[0], args[1] ? resolve(args[1]) : undefined)}`);
+  }
+  if (sub === 'register') {
+    ownerOnly();
+    const r = craft.registerWithClaude(root, { claudeBin: loadConfig(root).claudeBin || 'claude', apps: args.length ? args : undefined, log: (l) => console.log(l) });
+    return console.log(`\n${C.green('✔')} ${r.added.length} added, ${r.updated.length} updated${r.kept.length ? `, ${r.kept.length} left alone` : ''}. Restart Claude Code to load them; files go in the folder you start it in.`);
+  }
+  if (sub === 'mcp-config') return json(craft.mcpServers(root));
+  throw new Error('mortiflix craft [status|install|remove|open|register|mcp-config]');
 }
 
 async function showSetup(root) {
@@ -884,15 +972,19 @@ async function showSetup(root) {
   const row = (ok, name, detail) => console.log(`  ${ok === null ? C.dim('·') : ok ? C.green('✔') : C.red('✖')} ${name.padEnd(12)} ${detail}`);
   console.log(C.b('Your studio'));
   row(BACKENDS[config.backend].available(config, root).ok, 'Claude', `${config.backend}: ${BACKENDS[config.backend].available(config, root).detail}`);
-  row(v.engine === 'none' ? null : v.engine === 'elevenlabs' ? Boolean(voice.elevenKey(root)) && Boolean(v.elevenlabs.voice_id) : st.comfyui.ok, 'Narration',
-    v.engine === 'none' ? 'none' : v.engine === 'elevenlabs' ? `ElevenLabs: ${v.elevenlabs.voice_name || 'no voice chosen'} on ${v.elevenlabs.model_id}${voice.elevenKey(root) ? '' : ', key missing'}` : `this computer: ${st.comfyui.detail}`);
+  row(v.engine === 'none' ? null : v.engine === 'elevenlabs' ? Boolean(voice.elevenKey(root)) && Boolean(v.elevenlabs.voice_id) : null, 'Narration',
+    v.engine === 'none' ? 'none' : v.engine === 'elevenlabs' ? `ElevenLabs: ${v.elevenlabs.voice_name || 'no voice chosen'} on ${v.elevenlabs.model_id}${voice.elevenKey(root) ? '' : ', key missing'}` : 'your own voice (the recording booth)');
+  row(st.kinetograph.ok, 'Rendering', st.kinetograph.ok ? st.kinetograph.detail : `${st.kinetograph.detail} (mortiflix setup rendering)`);
   row(st.transitions.ok, 'Transitions', st.transitions.ok ? `remotion-transitions: ${st.transitions.detail}` : 'library not installed (mortiflix setup transitions)');
   row(st.music.engine === 'none' ? null : st.strudel.ok && st.chrome.ok, 'Music', st.music.engine === 'none' ? 'none' : `Strudel: ${st.strudel.detail}; Chrome: ${st.chrome.ok ? 'found' : 'missing'}${st.music.midi ? '; MIDI pack on' : ''}`);
+  row(st.daw.id ? true : null, 'Your DAW', st.daw.name || 'not named: general import steps');
+  row(st['daw-engine'].path ? st['daw-engine'].ok : null, 'Sound engine', st['daw-engine'].ok ? st['daw-engine'].detail : `${st['daw-engine'].detail}: mortiflix setup daw-engine --build`);
   row(st.assets.sites.length ? st['browser-harness'].ok : null, 'Assets', st.assets.sites.length ? `${st.assets.sites.map((x) => x.url).join(', ')} (browser-harness ${st['browser-harness'].ok ? st['browser-harness'].detail : 'missing'})` : 'no sites: sessions make every visual themselves');
   const pubCfg = st.publish;
   row(pubCfg.service === 'none' ? null : Boolean(pubCfg.key), 'Publishing', pubCfg.service === 'none' ? 'off: you post finals yourself'
     : `${pub.SERVICES[pubCfg.service].name}${pubCfg.profile ? `, profile ${pubCfg.profile}` : ''}${pubCfg.key ? '' : ', key missing'}`);
   row(st.blender.ok ? st['blender-addons'].ok : null, '3D', st.blender.ok ? `${st.blender.detail}; ${st['blender-addons'].detail}` : 'not set up');
+  row(st.craft.apps.some((x) => x.installed) ? st.craft.ok : null, 'Craft apps', st.craft.detail);
 }
 
 async function setupView(root) {
@@ -931,9 +1023,20 @@ async function setupCmd(root, [part, ...args], a) {
     for (const id of args) await offerInstall(root, id, { ask: false });
     return undefined;
   }
+  if (part === 'daw-engine' && a.build) { if (!(await offerInstall(root, 'daw-engine', { ask: false, build: true }))) process.exitCode = 1; return undefined; }
   if (part === 'music' && args.length) {
     const m = setup.saveMusic(root, { engine: args[0], midi: a.midi ? true : a['no-midi'] ? false : undefined });
     return console.log(`${C.green('✔')} Music: ${m.engine === 'none' ? 'none (music steps are skipped)' : `Strudel${m.midi ? ' + MIDI pack' : ''}`}.`);
+  }
+  if (part === 'browser') {
+    if (args.length || a.start !== undefined) setup.saveBrowser(root, { cdpUrl: args[0] === 'none' ? null : args[0], start: typeof a.start === 'string' ? a.start : undefined });
+    const b = setup.browserConfig(loadConfig(root));
+    const st = await setup.browserCheck(root);
+    return console.log(`${st.ok ? C.green('✔') : C.dim('·')} Studio browser: ${st.detail}${b.start ? `\n  Started when needed with: ${b.start}` : ''}`);
+  }
+  if (part === 'daw' && args.length) {
+    const d = setup.saveDaw(root, args[0]);
+    return console.log(`${C.green('✔')} ${d.id ? `Your DAW: ${d.name}. Every MIDI pack comes with its import steps.` : 'No DAW named: the import steps are general.'}`);
   }
   if (part === 'assets' && (args.length || a.clear)) {
     setup.saveAssetSites(root, a.clear ? [] : args);
@@ -972,11 +1075,9 @@ function checks(root, [action, id]) {
   if (!all.active.length) console.log(C.dim('  none yet'));
 }
 
-// The narration offer: ElevenLabs always; the local voice when this machine's graphics card can run it.
+// The narration offer: ElevenLabs (the only generated voice since 2026-11-01).
 function voiceOffer() {
-  const rec = voice.qwen.recommend(voice.qwen.detectGpus());
-  const eleven = `${C.b('mortiflix voice elevenlabs')} for ElevenLabs voices (a key from elevenlabs.io)`;
-  return rec.fits ? `${eleven}, or ${C.b('mortiflix voice local')}: ${rec.reason} Free and private, through ComfyUI.` : `${eleven}.`;
+  return `${C.b('mortiflix voice elevenlabs')} for ElevenLabs voices (a key from elevenlabs.io), ${C.b('mortiflix voice own')} or ${C.b('mortiflix voice none')}.`;
 }
 
 // The recording booth (src/booth.mjs) from a terminal, or importing takes recorded elsewhere.
@@ -1016,6 +1117,16 @@ async function musicCmd(root, rest, a) {
     writeFileSync(a.midi, music.midiPack(root, id));
     return console.log(`${C.green('✔')} ${a.midi}: every channel, the whole arrangement, the cue sheet (tempo, sections and hits are markers)`);
   }
+  if (a.song) {
+    const { importProjectSong } = await import('./song-store.mjs');
+    const r = await importProjectSong(root, id);
+    const notes = r.song.patterns.reduce((s, p) => s + Object.values(p.notes).reduce((x, ns) => x + ns.length, 0), 0);
+    for (const w of r.warnings) console.log(`  ${C.acc('!')} ${w}`);
+    console.log(`${C.green('✔')} Song: ${r.song.patterns.length} sections × ${r.song.channels.length} parts, ${notes} notes, the same as the score note for note.`);
+    console.log(`  ${r.paths.strudel} (plain Strudel: paste it into the Strudel REPL and it plays)`);
+    console.log(`  ${r.paths.song} (rev ${r.rev})`);
+    return;
+  }
   if (typeof a.import === 'string') {
     const r = await music.importMaster(root, id, { file: a.import });
     for (const w of r.warnings) console.log(`  ${C.acc('!')} ${w}`);
@@ -1040,11 +1151,9 @@ async function voiceCmd(root, [sub, ...words]) {
   const v = voice.voiceConfig(root);
   if (!sub) {
     const o = voice.voiceOverview(root);
-    console.log(`Narration: ${C.b({ none: 'none', elevenlabs: 'ElevenLabs', qwen: 'Qwen3-TTS on this computer', own: 'your own voice (the recording booth)' }[o.engine])}`);
+    console.log(`Narration: ${C.b({ none: 'none', elevenlabs: 'ElevenLabs', own: 'your own voice (the recording booth)' }[o.engine])}`);
     if (o.engine === 'elevenlabs') console.log(`  voice ${o.elevenlabs.voice_name || C.red('not chosen')} · model ${o.elevenlabs.model_id} · key ${o.elevenlabs_key || C.red('missing')}`);
-    if (o.engine === 'qwen') console.log(`  ${o.qwen.voice} · ${o.qwen.model} · ${o.qwen.language} · ComfyUI ${o.qwen.url}`);
-    console.log(`\nThis machine: ${o.gpus.length ? o.gpus.map((g) => `${g.name} (${g.vram_gb} GB)`).join(', ') : 'no NVIDIA GPU found'}`);
-    console.log(`  ${o.local.reason}`);
+    if (o.needs_key) console.log(`  ${C.red(o.needs_key)}`);
     console.log(`\nOptions: ${voiceOffer()}`);
     return;
   }
@@ -1090,27 +1199,8 @@ async function voiceCmd(root, [sub, ...words]) {
       console.log(`  Hear it: ${C.b('mortiflix voice test')}`);
       return;
     }
-    if (sub === 'local') {
-      const rec = voice.qwen.recommend(voice.qwen.detectGpus());
-      console.log(rec.fits ? `${C.green('✔')} ${rec.reason}` : C.red(rec.reason));
-      const url = (await rl.question(`ComfyUI address ${C.dim(`[${v.qwen.url}]`)}: `)).trim() || v.qwen.url;
-      const st = await new voice.qwen.ComfyUI({ url }).status();
-      if (!st.ok) {
-        console.log(C.red(st.reason));
-        console.log('  1. Install ComfyUI: https://www.comfy.org/download (it listens on http://127.0.0.1:8188)');
-        console.log('  2. In ComfyUI Manager install "TTS Audio Suite" (github.com/diodiogod/TTS-Audio-Suite), restart ComfyUI');
-        console.log(`  3. Run ${C.b('mortiflix voice local')} again. The Qwen3-TTS models (Apache-2.0) download on first use, about 4 GB.`);
-        voice.saveVoice(root, { qwen: { url } });
-        return;
-      }
-      console.log(`${C.green('✔')} ComfyUI ${st.comfyui || ''} with the TTS Audio Suite · ${st.gpu} · ${st.vram_free_gb} GB free`);
-      st.voices.forEach((name, i) => { const p = voice.qwen.PRESETS.find((x) => x.id === name); console.log(`  ${i + 1}. ${C.b(name)} ${C.dim(p ? `${p.language}: ${p.about}` : '')}`); });
-      const name = st.voices[Number((await rl.question(`Voice ${C.dim(`[${v.qwen.voice}]`)}: `)).trim()) - 1] || v.qwen.voice;
-      voice.saveVoice(root, { engine: 'qwen', qwen: { url, voice: name, model: rec.model || v.qwen.model } });
-      console.log(`${C.green('✔')} Local narration: ${name} on Qwen3-TTS ${rec.model || v.qwen.model}. Hear it: ${C.b('mortiflix voice test')}`);
-      return;
-    }
-    throw new Error('mortiflix voice [elevenlabs|local|none|test]');
+    if (sub === 'local') throw new Error('the local voice (Qwen3-TTS) was removed: the studio narrates with ElevenLabs (mortiflix voice elevenlabs)');
+    throw new Error('mortiflix voice [elevenlabs|own|none|test]');
   } finally {
     rl.close();
   }
@@ -1121,8 +1211,8 @@ async function voiceTest(root, text) {
   const line = text || 'Every city has a heartbeat. Ours runs on bikes.';
   let out;
   if (v.engine === 'elevenlabs') out = { ...(await new voice.eleven.ElevenLabs({ key: voice.elevenKey(root), server: v.elevenlabs.server }).sample(v.elevenlabs, line)), format: 'mp3' };
-  else if (v.engine === 'qwen') out = await new voice.qwen.ComfyUI({ url: v.qwen.url }).sample(v.qwen, line);
-  else throw new Error('no narration engine set up (mortiflix voice elevenlabs | local)');
+  else throw new Error('no generated voice set up (mortiflix voice elevenlabs)');
+  record(root, { provider: 'elevenlabs', kind: 'tts sample', stage: 'voice', model: v.elevenlabs.model_id, credits: ttsCredits(v.elevenlabs.model_id, out.characters) });
   const file = join(paths(root).run, `voice-test.${out.format}`);
   writeFileSync(file, out.audio);
   console.log(`${C.green('✔')} ${file}`);

@@ -41,6 +41,11 @@ const PITCHED_FORBIDDEN = /\.(note|n|freq|midichan|s|sound|orbit|struct|fast|slo
 const KIT_FORBIDDEN = /\.(midichan|s|sound|orbit|struct|fast|slow|mask|euclid\w*|degrade\w*|sometimes\w*|every|chunk|rev|ply|off|late|early)\s*\(/;
 const UNSAFE = /[;\n`]|=>|\bfunction\b|\bimport\b|\brequire\b|\bfetch\b|\beval\b|\bwindow\b|\bglobalThis\b/;
 
+// Sample libraries an instruments file may load ("samples": [url]): the studio's local copy ("/samples/vcsl.json",
+// served from $MFX_SAMPLES: samples.mjs fetches it) or Strudel's own maps online (a large sample may not arrive before an
+// offline render starts). A sound from one of them still names its "source" and licence.
+export const SAMPLE_MAPS = /^(\/samples\/[\w-]+\.json|https:\/\/raw\.githubusercontent\.com\/felixroos\/dough-samples\/main\/[\w-]+\.json)$/;
+
 const familyOf = (sound, set = '') => {
   const base = SYNTHS[sound]?.family || `sample:${sound}`;
   return /\.fm\s*\(/.test(set) ? `fm-${base}` : base;
@@ -75,6 +80,7 @@ export function checkInstruments(inst, manifest, { known = null } = {}) {
   const err = (m) => errors.push(`instruments.json: ${m}`);
   if (!inst || typeof inst !== 'object' || !Array.isArray(inst.parts)) return { errors: ['instruments.json: needs { "concept": "...", "parts": [ … one per channel … ] }'], warnings, registers: [] };
   if (!String(inst.concept || '').trim()) err('"concept": say the sound of the whole piece in a sentence or two');
+  if (inst.samples !== undefined && (!Array.isArray(inst.samples) || inst.samples.some((u) => !SAMPLE_MAPS.test(String(u))))) err('"samples": a list of sample maps: "/samples/vcsl.json" (the studio\'s local copy) or https://raw.githubusercontent.com/felixroos/dough-samples/main/<name>.json');
   const regs = registers(manifest);
   const byCh = new Map();
   for (const [i, p] of inst.parts.entries()) {
@@ -151,6 +157,7 @@ export function instrumentCode(inst) {
   return [
     '',
     '// ── instruments: music/instruments.json, added by the music engine (strudel.mjs). The score above holds the notes. ──',
+    ...(inst.samples || []).filter((u) => SAMPLE_MAPS.test(String(u))).map((u) => `await samples('${u}')`),
     `const drumOf = (v) => { const gm = ${JSON.stringify(GM_DRUMS).replace(/"/g, "'")}; const s = String(v.s ?? '').toLowerCase().split(':')[0]; return Number(v.drum ?? v.note ?? gm[s.includes('_') ? s.slice(s.lastIndexOf('_') + 1) : s]) }`,
     'const __instruments = {',
     ...parts,

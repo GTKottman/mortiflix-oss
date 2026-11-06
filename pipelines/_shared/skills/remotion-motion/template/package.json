@@ -3,12 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "studio": "remotion studio src/index.ts",
-    "still": "remotion still src/index.ts",
-    "render": "remotion render src/index.ts"
+    "check": "tsc --noEmit",
+    "studio": "kinetograph studio src/index.ts --no-open",
+    "still": "kinetograph still src/index.ts --comp Main",
+    "render": "kinetograph render src/index.ts --comp Main"
   },
   "dependencies": {
-    "@remotion/cli": "4.0.532",
+    "@remotion/fonts": "4.0.532",
     "@remotion/google-fonts": "4.0.532",
     "@remotion/transitions": "4.0.532",
     "react": "19.3.0",
