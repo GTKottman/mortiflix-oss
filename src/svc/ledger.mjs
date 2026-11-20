@@ -308,6 +308,13 @@ export function recordApiMessage(root, project, r, { role = null, stage = null }
   } catch { return null; }
 }
 
+// A quick call through the LiteLLM backend: its tokens and what the proxy said it cost.
+export function recordLiteLLMMessage(root, project, r, { role = null, stage = null } = {}) {
+  try {
+    return record(root, { project: project || null, stage: stage || (project ? currentStage(root, project) : null), provider: 'litellm', kind: 'quick call', role, model: r.model, input_tokens: r.usage?.prompt_tokens || 0, output_tokens: r.usage?.completion_tokens || 0, cost_usd: r.cost_usd || 0 });
+  } catch { return null; }
+}
+
 // ---------------------------------------------------------------- backfill
 
 let backfilling = new Map(); // root -> Promise

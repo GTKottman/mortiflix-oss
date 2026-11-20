@@ -23,7 +23,8 @@ export class UserError extends Error {}
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const DEFAULT_CONFIG = {
-  backend: 'claude-code',          // 'claude-code' | 'anthropic-api' | 'demo'
+  backend: 'claude-code',          // 'claude-code' | 'anthropic-api' | 'litellm' | 'demo'
+  litellmBaseUrl: null,             // litellm: the proxy's URL (else $LITELLM_BASE_URL); model = one of its models
   model: null,                      // null = the backend's default (anthropic-api: claude-opus-5-5)
   effort: 'high',                   // anthropic-api only: low | medium | high | xhigh | max
   claudeBin: 'claude',

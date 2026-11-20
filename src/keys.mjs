@@ -5,6 +5,7 @@ import { readSecret, writeSecret, loadConfig, readSessionEnv, writeSessionEnv, U
 import { loadProject, projectPipeline } from './projects.mjs';
 import { stepView } from './gates.mjs';
 import { credentials as anthropicCredentials } from './backends/anthropic-api.mjs';
+import { baseUrl as litellmBaseUrl } from './backends/litellm.mjs';
 import { voiceConfig } from './voice/index.mjs';
 import { ElevenLabs } from './voice/elevenlabs.mjs';
 
@@ -15,6 +16,13 @@ export const KEYS = {
     env: 'ANTHROPIC_API_KEY',
     get: 'console.anthropic.com › Settings › API keys',
     for: 'the Claude API backend (you pay per token). Not needed with Claude Code, which uses your own login.',
+  },
+  litellm: {
+    name: 'LiteLLM key',
+    secret: 'litellm_api_key',
+    env: 'LITELLM_API_KEY',
+    get: 'your LiteLLM proxy: a virtual key (LiteLLM UI › Virtual Keys) or its master key',
+    for: 'the LiteLLM backend, when the proxy asks for a key. A proxy without keys needs none.',
   },
   elevenlabs: {
     name: 'ElevenLabs API key',
@@ -103,6 +111,14 @@ export async function verifyKey(root, id, value, { fetch = globalThis.fetch } = 
       if (res.ok) return { ok: true, detail: 'the Claude API accepted it' };
       if (res.status === 401 || res.status === 403) return { ok: false, detail: 'the Claude API refused it (check that you copied the whole key)' };
       return { ok: null, detail: `couldn't check it (Claude API answered ${res.status})` };
+    }
+    if (id === 'litellm') {
+      // Listing the proxy's models is free and needs the same key a session uses.
+      const url = litellmBaseUrl(loadConfig(root));
+      const res = await fetch(`${url}/v1/models`, { headers: { Authorization: `Bearer ${key}` } });
+      if (res.ok) { const n = ((await res.json().catch(() => ({}))).data || []).length; return { ok: true, detail: `the proxy at ${url} accepted it (${n} model${n === 1 ? '' : 's'})` }; }
+      if (res.status === 401 || res.status === 403) return { ok: false, detail: `the proxy at ${url} refused it` };
+      return { ok: null, detail: `couldn't check it (the proxy at ${url} answered ${res.status})` };
     }
     if (id === 'uploadpost') {
       const res = await fetch(`${process.env.UPLOAD_POST_API || 'https://api.upload-post.com'}/api/uploadposts/me`, { headers: { Authorization: `Apikey ${key}` } });
