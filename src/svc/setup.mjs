@@ -12,7 +12,7 @@ import { voiceConfig } from '../voice/index.mjs';
 import { runClaude } from './chat.mjs';
 import { videoNotesLight } from './videonotes.mjs';
 
-export const BACKENDS = ['claude-code', 'anthropic-api', 'demo'];
+export const BACKENDS = ['claude-code', 'anthropic-api', 'litellm', 'demo'];
 // Keys a session reads from its environment, kept in session.env (not in KEYS).
 const SESSION_KEYS = {
   gemini: { name: 'Gemini API key', env: 'GEMINI_API_KEY', for: 'pictures and video made with Google Gemini / Veo, when a pipeline uses them. Optional.', get: 'aistudio.google.com › Get API key' },

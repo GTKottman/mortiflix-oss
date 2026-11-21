@@ -214,7 +214,7 @@ export class Shell {
   }
 }
 
-async function bashTool(shell, input, onActivity) {
+export async function bashTool(shell, input, onActivity) {
   if (input?.restart) { shell.kill(); shell.start(); return { content: 'The shell was restarted.' }; }
   const command = String(input?.command || '');
   if (!command.trim()) return { error: true, content: 'empty command' };

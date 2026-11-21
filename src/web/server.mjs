@@ -15,6 +15,7 @@ import { record, ttsCredits } from '../svc/ledger.mjs';
 import { createProject, addIntakeFile, startProject, listProjects, loadProject, projectPaths, projectPipeline, readEvents, readJournal } from '../projects.mjs';
 import * as gates from '../gates.mjs';
 import { Runner, BACKENDS } from '../runner.mjs';
+import { listModels as litellmModels } from '../backends/litellm.mjs';
 import * as voice from '../voice/index.mjs';
 import * as keys from '../keys.mjs';
 import * as setup from '../setup.mjs';
@@ -147,17 +148,24 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
     const after = (out) => { changed(); runner.wake(); return send(res, 200, out ?? { ok: true }); };
 
     if (p === '/studio' && method === 'GET') return send(res, 200, studioInfo(root, runner));
+    // The models a LiteLLM proxy serves, for the Settings picker. `url` previews an unsaved proxy URL.
+    if (p === '/litellm/models' && method === 'GET') {
+      const config = { ...loadConfig(root), ...(url.searchParams.get('url') ? { litellmBaseUrl: url.searchParams.get('url') } : {}) };
+      try { return send(res, 200, { models: await litellmModels(root, config) }); } catch (e) { throw new BadRequest(e.message); }
+    }
     if (p === '/config' && method === 'PUT') {
       const body = await json(req);
-      const allowed = ['backend', 'model', 'effort', 'sandbox', 'webTools', 'fallbacks', 'maxSessionMinutes', 'claudeBin'];
+      const allowed = ['backend', 'model', 'effort', 'sandbox', 'webTools', 'fallbacks', 'maxSessionMinutes', 'claudeBin', 'litellmBaseUrl'];
       const patch = {};
       for (const k of allowed) if (k in body) patch[k] = body[k];
       if (patch.backend !== undefined && !BACKENDS[patch.backend]) throw new BadRequest('unknown backend');
       if (patch.effort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max'].includes(patch.effort)) throw new BadRequest('effort: low, medium, high, xhigh or max');
       if (patch.model === '') patch.model = null;
+      if (patch.litellmBaseUrl !== undefined) patch.litellmBaseUrl = String(patch.litellmBaseUrl || '').trim() || null;
       if (patch.maxSessionMinutes !== undefined) patch.maxSessionMinutes = Math.min(1440, Math.max(5, Number(patch.maxSessionMinutes) || 240));
       saveConfig(root, patch);
       if ('api_key' in body) writeSecret(root, 'anthropic_api_key', body.api_key ? String(body.api_key).trim() : null);
+      if ('litellm_api_key' in body) writeSecret(root, 'litellm_api_key', body.litellm_api_key ? String(body.litellm_api_key).trim() : null);
       return after(studioInfo(root, runner));
     }
     // MIDI ⇄ Strudel (doc 28): run a pattern's text into notes; turn wanted notes into the smallest text change.
@@ -596,10 +604,12 @@ function studioInfo(root, runner) {
   const checks = readJson(paths(root).checks);
   return {
     root,
-    config: { backend: config.backend, model: config.model, effort: config.effort, sandbox: config.sandbox, webTools: config.webTools, fallbacks: config.fallbacks, maxSessionMinutes: config.maxSessionMinutes },
+    config: { backend: config.backend, model: config.model, effort: config.effort, sandbox: config.sandbox, webTools: config.webTools, fallbacks: config.fallbacks, maxSessionMinutes: config.maxSessionMinutes, litellmBaseUrl: config.litellmBaseUrl },
     backends,
     api_key_set: Boolean(readSecret(root, 'anthropic_api_key')),
     api_key_env: Boolean(process.env.ANTHROPIC_API_KEY),
+    litellm_key_set: Boolean(readSecret(root, 'litellm_api_key')),
+    litellm_key_env: Boolean(process.env.LITELLM_API_KEY),
     session_env: existsSync(paths(root).sessionEnv),
     runner: runner.current ? { project: runner.current.projectId, session: runner.current.sessionId, sessions: [...runner.running.values()].map((r) => ({ project: r.projectId, session: r.sessionId })) } : null,
     checks_proposed: checks.proposed.length,

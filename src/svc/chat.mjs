@@ -20,7 +20,8 @@ import { withQuickFlags } from '../quickargs.mjs';
 import { credentials, DEFAULT_MODEL } from '../backends/anthropic-api.mjs';
 import { stageOf, STAGE_NAMES } from './stages.mjs';
 import { readLook } from './look.mjs';
-import { recordApiMessage, recordClaudeJson } from './ledger.mjs';
+import { recordApiMessage, recordClaudeJson, recordLiteLLMMessage } from './ledger.mjs';
+import { chatOnce as litellmChat } from '../backends/litellm.mjs';
 
 const ROLES = ['user', 'ai', 'system', 'action', 'stage'];
 const chatFile = (root, id) => join(projectPaths(root, id).state, 'chat.jsonl');
@@ -219,7 +220,7 @@ function parseReply(text) {
 }
 
 // One short call to the user's own AI. Backends: claude-code (`claude -p`, no tools, no saved session), anthropic-api
-// (the fallback key), demo (canned, free). `config.chatBackend` overrides the studio's backend.
+// (the fallback key), litellm (the proxy's model), demo (canned, free). `config.chatBackend` overrides the studio's backend.
 export async function quickReply(root, id, { text, context }) {
   const config = loadConfig(root);
   const backend = config.chatBackend || loadProject(root, id).backend || config.backend;
@@ -228,6 +229,11 @@ export async function quickReply(root, id, { text, context }) {
     const m = String(text).match(/\b(s\d{2,3}|b\d{2,3}|t\d{2,3}|m\d{2,3}|sf\d{2,3})\b/i);
     return m ? { reply: `Demo: I'll change ${m[1].toUpperCase()} for you.`, move: { kind: 'fix', node: m[1].toLowerCase(), text } }
       : { reply: 'Demo: noted. The AI reads this before its next piece of work.', move: null };
+  }
+  if (backend === 'litellm') {
+    const r = await litellmChat(root, config, { system: SYSTEM, prompt, maxTokens: 600, model: config.chatModel || null });
+    recordLiteLLMMessage(root, id, r, { role: 'chat' });
+    return parseReply(r.text);
   }
   if (backend === 'anthropic-api') {
     const { key } = credentials(root);
@@ -244,12 +250,17 @@ export async function quickReply(root, id, { text, context }) {
   return parseReply(j.result);
 }
 
-// One short question to the user's own AI with no tools (beat names): the answer's text. claude-code or anthropic-api.
+// One short question to the user's own AI with no tools (beat names): the answer's text. claude-code, anthropic-api or litellm.
 // `stage` (a stage key, e.g. voiceMusic) books the call on that stage; else the ledger guesses the project's current one.
 export async function askAI(root, id, prompt, { maxTokens = 400, role = null, stage = null } = {}) {
   const config = loadConfig(root);
   const backend = config.chatBackend || loadProject(root, id).backend || config.backend;
   if (backend === 'demo') return '';
+  if (backend === 'litellm') {
+    const r = await litellmChat(root, config, { prompt, maxTokens, model: config.chatModel || null });
+    recordLiteLLMMessage(root, id, r, { role, stage });
+    return r.text;
+  }
   if (backend === 'anthropic-api') {
     const { key } = credentials(root);
     if (!key) throw new Error('no Anthropic API key');
@@ -270,6 +281,11 @@ export async function askAnon(root, prompt, { role = 'options', maxTokens = 900 
   const config = loadConfig(root);
   const backend = config.chatBackend || config.backend;
   if (backend === 'demo') return '';
+  if (backend === 'litellm') {
+    const r = await litellmChat(root, config, { prompt, maxTokens, model: config.chatModel || null });
+    recordLiteLLMMessage(root, null, r, { role });
+    return r.text;
+  }
   if (backend === 'anthropic-api') {
     const { key } = credentials(root);
     if (!key) throw new Error('no Anthropic API key');

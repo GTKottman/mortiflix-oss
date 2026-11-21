@@ -27,7 +27,7 @@ const C = process.stdout.isTTY && !process.env.NO_COLOR
 export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claude makes the video, you approve every stage.
 
   ${C.b('Getting started')}
-  mortiflix init [--backend claude-code|anthropic-api|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
+  mortiflix init [--backend claude-code|anthropic-api|litellm|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
   mortiflix setup                                              the walkthrough: Claude, transitions, narration, music, your DAW, sound engine, assets, 3D, Craft apps
   mortiflix setup <claude|transitions|narration|music|daw|daw-engine|assets|publish|3d|craft>  one part (mortiflix setup status: where things stand)
   mortiflix keys                                               add or change your keys (Anthropic, ElevenLabs, others)
@@ -230,7 +230,7 @@ async function init(root, a) {
   const fresh = !existsSync(paths(root).config);
   ensureStudio(root);
   const backend = typeof a.backend === 'string' ? a.backend : (fresh ? detectBackend(root) : loadConfig(root).backend);
-  if (!BACKENDS[backend]) throw new Error('backend must be claude-code, anthropic-api or demo');
+  if (!BACKENDS[backend]) throw new Error('backend must be claude-code, anthropic-api, litellm or demo');
   saveConfig(root, { backend });
   console.log(`${C.green('✔')} Studio ready at ${C.b(root)}`);
   console.log(`  Backend: ${C.b(backend)} ${C.dim(BACKENDS[backend].available(loadConfig(root), root).detail)}`);
@@ -640,7 +640,7 @@ async function config(root, [key, value]) {
   if (['true', 'false'].includes(value)) v = value === 'true';
   else if (value === 'null') v = null;
   else if (/^\d+$/.test(value)) v = Number(value);
-  if (key === 'backend' && !BACKENDS[v]) throw new Error('backend must be claude-code, anthropic-api or demo');
+  if (key === 'backend' && !BACKENDS[v]) throw new Error('backend must be claude-code, anthropic-api, litellm or demo');
   saveConfig(root, { [key]: v });
   console.log(`${C.green('✔')} ${key} = ${JSON.stringify(v)}`);
 }
