@@ -27,7 +27,7 @@ const C = process.stdout.isTTY && !process.env.NO_COLOR
 export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine. Claude makes the video, you approve every stage.
 
   ${C.b('Getting started')}
-  mortiflix init [--backend claude-code|anthropic-api|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
+  mortiflix init [--backend claude-code|anthropic-api|aimlapi|demo]   set up the studio (~/Mortiflix, or $MORTIFLIX_STUDIO)
   mortiflix setup                                              the walkthrough: Claude, transitions, narration, music, your DAW, sound engine, assets, 3D, Craft apps
   mortiflix setup <claude|transitions|narration|music|daw|daw-engine|assets|publish|3d|craft>  one part (mortiflix setup status: where things stand)
   mortiflix keys                                               add or change your keys (Anthropic, ElevenLabs, others)
@@ -86,8 +86,8 @@ export const HELP = `${C.b('mortiflix')}: a motion design studio on your machine
 
   ${C.b('Settings')}
   mortiflix config [key [value]]                               show or change settings
-  mortiflix keys set <anthropic|elevenlabs|uploadpost|NAME>  set one key (typed hidden, or piped on stdin)
-  mortiflix keys remove <anthropic|elevenlabs|uploadpost|NAME>
+  mortiflix keys set <anthropic|aimlapi|elevenlabs|uploadpost|NAME>  set one key (typed hidden, or piped on stdin)
+  mortiflix keys remove <anthropic|aimlapi|elevenlabs|uploadpost|NAME>
   mortiflix checks [approve|reject <id>]                       the error checklist sessions proposed
 
   --studio <dir> works with every command. --json prints what pipelines, list, status, review, keys and
@@ -230,7 +230,7 @@ async function init(root, a) {
   const fresh = !existsSync(paths(root).config);
   ensureStudio(root);
   const backend = typeof a.backend === 'string' ? a.backend : (fresh ? detectBackend(root) : loadConfig(root).backend);
-  if (!BACKENDS[backend]) throw new Error('backend must be claude-code, anthropic-api or demo');
+  if (!BACKENDS[backend]) throw new Error('backend must be claude-code, anthropic-api, aimlapi or demo');
   saveConfig(root, { backend });
   console.log(`${C.green('✔')} Studio ready at ${C.b(root)}`);
   console.log(`  Backend: ${C.b(backend)} ${C.dim(BACKENDS[backend].available(loadConfig(root), root).detail)}`);
@@ -640,7 +640,7 @@ async function config(root, [key, value]) {
   if (['true', 'false'].includes(value)) v = value === 'true';
   else if (value === 'null') v = null;
   else if (/^\d+$/.test(value)) v = Number(value);
-  if (key === 'backend' && !BACKENDS[v]) throw new Error('backend must be claude-code, anthropic-api or demo');
+  if (key === 'backend' && !BACKENDS[v]) throw new Error('backend must be claude-code, anthropic-api, aimlapi or demo');
   saveConfig(root, { [key]: v });
   console.log(`${C.green('✔')} ${key} = ${JSON.stringify(v)}`);
 }
@@ -784,11 +784,13 @@ async function setupPart(root, id, st) {
     const cc = BACKENDS['claude-code'].available(config, root);
     console.log(`  ${mark(cc.ok)} Claude Code: ${cc.detail}`);
     console.log(`  ${mark(Boolean(keys.keySource(root, 'anthropic')))} Anthropic API key: ${keys.keySource(root, 'anthropic') || 'not set'}`);
+    console.log(`  ${mark(Boolean(keys.keySource(root, 'aimlapi')))} AI/ML API key: ${keys.keySource(root, 'aimlapi') || 'not set'}`);
     console.log(`  In use: ${C.b(config.backend)}`);
     if (cc.ok && config.backend !== 'claude-code' && await confirm('  Use your Claude Code login (your plan pays)?', true)) saveConfig(root, { backend: 'claude-code' });
     if (!cc.ok) {
       console.log(C.dim('  Claude Code isn\'t installed: https://claude.com/claude-code (then run this again), or use an API key.'));
       if (await confirm('  Use an Anthropic API key instead (you pay per token)?', true) && await askKey(root, 'anthropic', { required: true })) saveConfig(root, { backend: 'anthropic-api' });
+      else if (await confirm('  Or an AI/ML API key (Claude, GPT, Gemini and more with one key; you pay per token)?', false) && await askKey(root, 'aimlapi', { required: true })) saveConfig(root, { backend: 'aimlapi' });
     }
     return;
   }

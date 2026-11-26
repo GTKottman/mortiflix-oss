@@ -7,7 +7,7 @@ studio.
  you ── web studio / CLI ──▶  gates.mjs  ◀── bridge (Unix socket) ◀── mfx ◀── the session (Claude)
                                   │                                            ▲
                                   ▼                                            │
-                           state/<id>/ (the record)          runner.mjs ── backend: claude-code │ anthropic-api │ demo
+                           state/<id>/ (the record)          runner.mjs ── backend: claude-code │ anthropic-api │ aimlapi │ demo
                                                                   │
                                                      projects/<id>/ (the working folder, session cwd)
 ```
@@ -99,6 +99,10 @@ returns `{ ok, error?, usage?, cost_usd? }`; `available(config, root)` says whet
   that returns images as image blocks), optional web search and fetch, adaptive thinking with a configurable effort,
   automatic prompt caching, server-side compaction, and refusal fallbacks (`fallbacks: "default"`; blocks of a
   declined attempt are dropped before they're sent back). Default model: `claude-opus-5-5`.
+- **aimlapi**: the same loop on AI/ML API's OpenAI-compatible `POST /v1/chat/completions` (`api.aimlapi.com`):
+  `bash` and the editor as function tools, a viewed image sent back as an `image_url` part. No Anthropic server
+  tools (web search, compaction, fallbacks). The key (`AIMLAPI_API_KEY` or `secrets.json`) goes only to
+  `https://api.aimlapi.com`, and redirects are not followed. Default model: `anthropic/claude-sonnet-5`.
 - **demo**: no model; walks the gates with placeholder work through the real bridge.
 
 Adding a backend is adding a module with those two functions to `BACKENDS` in `runner.mjs`.
@@ -124,8 +128,8 @@ port's status is in [WINDOWS.md](WINDOWS.md).
 
 ## Keys (`src/keys.mjs`)
 
-One registry of the keys a studio can hold (Anthropic, ElevenLabs), what each is for, and when a project needs it:
-`anthropic` when it runs on the `anthropic-api` backend, `elevenlabs` when the studio narrates with ElevenLabs and the
+One registry of the keys a studio can hold (Anthropic, AI/ML API, ElevenLabs), what each is for, and when a project needs it:
+`anthropic` when it runs on the `anthropic-api` backend, `aimlapi` on the `aimlapi` backend, `elevenlabs` when the studio narrates with ElevenLabs and the
 work makes sound. `verifyKey` proves a key with a free, read-only call (`GET /v1/models`, ElevenLabs'
 `/v1/user/subscription`) and tells a refused key (`ok: false`) apart from an unreachable API (`ok: null`). The CLI
 (`mortiflix keys`, `init`, `new`), the web server (`/api/keys`, and `409 needs_keys` from `/start`) and the runner (a

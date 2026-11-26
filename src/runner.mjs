@@ -32,6 +32,7 @@ import { quickV3Step, V3_RUN, planMusicAfterVoice } from './quickv3.mjs';
 import { RenderQueue } from './renderq.mjs';
 import * as claudeCode from './backends/claude-code.mjs';
 import * as anthropicApi from './backends/anthropic-api.mjs';
+import * as aimlapi from './backends/aimlapi.mjs';
 import * as demo from './backends/demo.mjs';
 import * as replay from './backends/replay.mjs';
 import { replayOn, replayStudio } from './replay.mjs';
@@ -40,7 +41,7 @@ import { sceneRemaking } from './svc/lessons.mjs';
 import { bookSession, currentStage, ledgerFile } from './svc/ledger.mjs';
 import { paidGate, waitForCost } from './svc/paidgate.mjs';
 
-export const BACKENDS = { 'claude-code': claudeCode, 'anthropic-api': anthropicApi, demo, replay };
+export const BACKENDS = { 'claude-code': claudeCode, 'anthropic-api': anthropicApi, aimlapi, demo, replay };
 const PROGRESS = ['SUBMITTED', 'STEP_DONE', 'ASKED', 'NEEDS_YOU', 'HANDOFF'];
 const GATE_PROGRESS = ['SUBMITTED', 'STEP_DONE', 'ASKED', 'NEEDS_YOU'];
 const MAX_SESSIONS_WITHOUT_GATE = 8;
@@ -284,7 +285,7 @@ export class Runner extends EventEmitter {
     }
     config.backend = backendName;
     const backend = BACKENDS[backendName];
-    if (!backend) throw new Error(`unknown backend "${backendName}" (claude-code, anthropic-api or demo)`);
+    if (!backend) throw new Error(`unknown backend "${backendName}" (claude-code, anthropic-api, aimlapi or demo)`);
     const pp = projectPaths(root, projectId);
     const sessionId = new Date().toISOString().replace(/[:.]/g, '-');
     const transcript = join(pp.sessions, `${sessionId}.jsonl`);
@@ -355,7 +356,7 @@ export class Runner extends EventEmitter {
         root,
         projectId,
         workdir: pp.work,
-        prompt: startPrompt(pp.work, reason, { claudeMd: config.backend === 'anthropic-api' }),
+        prompt: startPrompt(pp.work, reason, { claudeMd: ['anthropic-api', 'aimlapi'].includes(config.backend) }),
         env: { ...sessionEnv, ...bridge.env, MFX_SHARED: join(paths(root).run, 'shared') },
         transcript,
         onActivity: (a) => this.addActivity(projectId, a),
@@ -369,7 +370,7 @@ export class Runner extends EventEmitter {
       // T2: canvas edits that code can do (a voice line's new take, new words, a note on a line) are done now, with no
       // session. Whatever is left open goes to the session as before, unless config.editSession is false: then the
       // project pauses with "needs the AI" and the Let the AI take over button.
-      const routed = await routeOpenEdits({ root, id: projectId, run: ['claude-code', 'anthropic-api'].includes(backendName) ? sendRun : null, runArgs, config, onActivity: runArgs.onActivity, env: runArgs.env, deps: this.studio?.editDeps || {} });
+      const routed = await routeOpenEdits({ root, id: projectId, run: ['claude-code', 'anthropic-api', 'aimlapi'].includes(backendName) ? sendRun : null, runArgs, config, onActivity: runArgs.onActivity, env: runArgs.env, deps: this.studio?.editDeps || {} });
       if (routed.handled.length) {
         this.addActivity(projectId, { kind: 'info', text: `Done by the studio, no session: ${routed.handled.join(', ')}.` });
         // the screens of THIS project hear it at once (the service's own node watch only follows its one open project:

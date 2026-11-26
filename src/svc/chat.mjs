@@ -18,6 +18,7 @@ import { PARENT_SESSION_VARS, leanArgs } from '../backends/claude-code.mjs';
 import { STUDIO_MODELS, effortFor, NO_RETRY } from '../models.mjs';
 import { withQuickFlags } from '../quickargs.mjs';
 import { credentials, DEFAULT_MODEL } from '../backends/anthropic-api.mjs';
+import { quickMessage as aimlapiMessage } from '../backends/aimlapi.mjs';
 import { stageOf, STAGE_NAMES } from './stages.mjs';
 import { readLook } from './look.mjs';
 import { recordApiMessage, recordClaudeJson } from './ledger.mjs';
@@ -218,7 +219,7 @@ function parseReply(text) {
   return { reply: s.trim().slice(0, 4000) || '(no answer)', move: null };
 }
 
-// One short call to the user's own AI. Backends: claude-code (`claude -p`, no tools, no saved session), anthropic-api
+// One short call to the user's own AI. Backends: claude-code (`claude -p`, no tools, no saved session), aimlapi (its key), anthropic-api
 // (the fallback key), demo (canned, free). `config.chatBackend` overrides the studio's backend.
 export async function quickReply(root, id, { text, context }) {
   const config = loadConfig(root);
@@ -228,6 +229,11 @@ export async function quickReply(root, id, { text, context }) {
     const m = String(text).match(/\b(s\d{2,3}|b\d{2,3}|t\d{2,3}|m\d{2,3}|sf\d{2,3})\b/i);
     return m ? { reply: `Demo: I'll change ${m[1].toUpperCase()} for you.`, move: { kind: 'fix', node: m[1].toLowerCase(), text } }
       : { reply: 'Demo: noted. The AI reads this before its next piece of work.', move: null };
+  }
+  if (backend === 'aimlapi') {
+    const r = await aimlapiMessage(root, { model: config.chatModel || config.model, system: SYSTEM, prompt, maxTokens: 600 });
+    recordApiMessage(root, id, r, { role: 'chat' });
+    return parseReply(r.text);
   }
   if (backend === 'anthropic-api') {
     const { key } = credentials(root);
@@ -250,6 +256,11 @@ export async function askAI(root, id, prompt, { maxTokens = 400, role = null, st
   const config = loadConfig(root);
   const backend = config.chatBackend || loadProject(root, id).backend || config.backend;
   if (backend === 'demo') return '';
+  if (backend === 'aimlapi') {
+    const r = await aimlapiMessage(root, { model: config.chatModel || config.model, prompt, maxTokens });
+    recordApiMessage(root, id, r, { role, stage });
+    return r.text;
+  }
   if (backend === 'anthropic-api') {
     const { key } = credentials(root);
     if (!key) throw new Error('no Anthropic API key');
@@ -270,6 +281,11 @@ export async function askAnon(root, prompt, { role = 'options', maxTokens = 900 
   const config = loadConfig(root);
   const backend = config.chatBackend || config.backend;
   if (backend === 'demo') return '';
+  if (backend === 'aimlapi') {
+    const r = await aimlapiMessage(root, { model: config.chatModel || config.model, prompt, maxTokens });
+    recordApiMessage(root, null, r, { role });
+    return r.text;
+  }
   if (backend === 'anthropic-api') {
     const { key } = credentials(root);
     if (!key) throw new Error('no Anthropic API key');

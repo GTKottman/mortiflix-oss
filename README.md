@@ -142,6 +142,7 @@ without installing.
 |---|---|---|
 | `claude-code` | `claude -p` in the project folder, with your login | your Claude plan |
 | `anthropic-api` | Mortiflix's own agent loop on the Claude API: a persistent shell, a file editor that can *show* Claude the frames it renders, web search, prompt caching, compaction for long sessions | your API key, per token |
+| `aimlapi` | the same agent loop (shell and file editor) on [AI/ML API](https://aimlapi.com)'s OpenAI-compatible API: Claude, GPT, Gemini and other models with one key. Default model `anthropic/claude-sonnet-5`; no web search, compaction or refusal fallbacks | your AI/ML API key, per token |
 | `demo` | a scripted stand-in that walks every gate with placeholder frames and a test-pattern video | nobody |
 
 Pick one with `mortiflix init --backend …`, `mortiflix config backend …`, or Settings in the web studio.
