@@ -122,3 +122,22 @@ test('aimlapi: quick calls (no tools) go through the same client and are booked'
   assert.equal(row.model, 'anthropic/claude-sonnet-5');
   assert.equal(row.input_tokens, 100);
 });
+
+test('aimlapi: a fresh studio with only an AI/ML API key starts on it; a studio already set up keeps its backend', async (t) => {
+  const { spawnSync } = await import('node:child_process');
+  const { mkdtempSync, rmSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { dirname } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'mfx-detect-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  // No `claude` on the PATH and no Anthropic key: only the AI/ML API key is there.
+  const env = { HOME: dir, PATH: `${dirname(process.execPath)}:/usr/bin:/bin`, AIMLAPI_API_KEY: 'k-env', NO_COLOR: '1' };
+  const init = (studio, ...args) => spawnSync(process.execPath, ['bin/mortiflix', '--studio', studio, 'init', '--yes', ...args], { env, encoding: 'utf8', input: '' });
+  const backendOf = (studio) => JSON.parse(readFileSync(join(studio, 'config.json'), 'utf8')).backend;
+  assert.equal(init(join(dir, 'fresh')).status, 0);
+  assert.equal(backendOf(join(dir, 'fresh')), 'aimlapi');
+  // An existing studio on another backend: init again doesn't move it.
+  assert.equal(init(join(dir, 'old'), '--backend', 'demo').status, 0);
+  assert.equal(init(join(dir, 'old')).status, 0);
+  assert.equal(backendOf(join(dir, 'old')), 'demo');
+});

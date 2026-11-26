@@ -223,6 +223,8 @@ function detectBackend(root) {
   const config = loadConfig(root);
   if (BACKENDS['claude-code'].available(config).ok) return 'claude-code';
   if (BACKENDS['anthropic-api'].available(config, root).ok) return 'anthropic-api';
+  // Only a fresh studio with no Claude Code and no Anthropic key gets here: a found AI/ML API key beats the demo.
+  if (BACKENDS.aimlapi.available(config, root).ok) return 'aimlapi';
   return 'demo';
 }
 

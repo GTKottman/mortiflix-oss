@@ -145,6 +145,7 @@ without installing.
 | `aimlapi` | the same agent loop (shell and file editor) on [AI/ML API](https://aimlapi.com)'s OpenAI-compatible API: Claude, GPT, Gemini and other models with one key. Default model `anthropic/claude-sonnet-5`; no web search, compaction or refusal fallbacks | your AI/ML API key, per token |
 | `demo` | a scripted stand-in that walks every gate with placeholder frames and a test-pattern video | nobody |
 
+A fresh `mortiflix init` picks Claude Code if it's there, then an Anthropic key, then an AI/ML API key (`AIMLAPI_API_KEY`), else the demo.
 Pick one with `mortiflix init --backend …`, `mortiflix config backend …`, or Settings in the web studio.
 Each project shows what its Claude work cost: on a Claude plan, what it **would have cost** at API prices (you didn't
 pay that); with an API key through Claude Code, about what you spent.
