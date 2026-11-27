@@ -296,7 +296,7 @@ Cards: `script {beats}`, `looks {frames, using}`, `shots`/`transitions {nodes}`,
 | Type | Params | Result |
 |---|---|---|
 | `setup.status` | `{}` | `{backend, backends, claude: {found, path, version, logged_in, auth_method, subscription, login_command, detail}, keys, voice, tools: {node, ffmpeg, ffprobe, installable, studio}, videoNotes: {enabled, ready}, first_run}` |
-| `setup.backend` | `{backend?: claude-code\|anthropic-api\|demo, claudeBin?}` | `{backend, claudeBin}`. `claudeBin` = `claude` or an absolute path (the app finds it where a desktop app's PATH doesn't look) |
+| `setup.backend` | `{backend?: claude-code\|anthropic-api\|aimlapi\|demo, claudeBin?}` | `{backend, claudeBin}`. `claudeBin` = `claude` or an absolute path (the app finds it where a desktop app's PATH doesn't look) |
 | `setup.done` | `{done?: true}` | first run finished |
 | `setup.claude.test` | `{}` | `{ok, reply, seconds}`: one short `claude -p` with no tools |
 | `keys.list` | `{}` | `[{id, name, for, get, set, source}]`, never the values |

@@ -158,6 +158,7 @@ export async function startServer(root, { port = 4646, host = '127.0.0.1', runne
       if (patch.maxSessionMinutes !== undefined) patch.maxSessionMinutes = Math.min(1440, Math.max(5, Number(patch.maxSessionMinutes) || 240));
       saveConfig(root, patch);
       if ('api_key' in body) writeSecret(root, 'anthropic_api_key', body.api_key ? String(body.api_key).trim() : null);
+      if ('aimlapi_key' in body) writeSecret(root, 'aimlapi_api_key', body.aimlapi_key ? String(body.aimlapi_key).trim() : null);
       return after(studioInfo(root, runner));
     }
     // MIDI ⇄ Strudel (doc 28): run a pattern's text into notes; turn wanted notes into the smallest text change.
@@ -600,6 +601,8 @@ function studioInfo(root, runner) {
     backends,
     api_key_set: Boolean(readSecret(root, 'anthropic_api_key')),
     api_key_env: Boolean(process.env.ANTHROPIC_API_KEY),
+    aimlapi_key_set: Boolean(readSecret(root, 'aimlapi_api_key')),
+    aimlapi_key_env: Boolean(process.env.AIMLAPI_API_KEY),
     session_env: existsSync(paths(root).sessionEnv),
     runner: runner.current ? { project: runner.current.projectId, session: runner.current.sessionId, sessions: [...runner.running.values()].map((r) => ({ project: r.projectId, session: r.sessionId })) } : null,
     checks_proposed: checks.proposed.length,

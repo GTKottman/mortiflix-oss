@@ -23,8 +23,8 @@ export class UserError extends Error {}
 export const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export const DEFAULT_CONFIG = {
-  backend: 'claude-code',          // 'claude-code' | 'anthropic-api' | 'demo'
-  model: null,                      // null = the backend's default (anthropic-api: claude-opus-5-5)
+  backend: 'claude-code',          // 'claude-code' | 'anthropic-api' | 'aimlapi' | 'demo'
+  model: null,                      // null = the backend's default (anthropic-api: claude-opus-5-5, aimlapi: anthropic/claude-sonnet-5)
   effort: 'high',                   // anthropic-api only: low | medium | high | xhigh | max
   claudeBin: 'claude',
   claudeArgs: ['--permission-mode', 'acceptEdits', '--allowedTools', 'Bash Read Write Edit Glob Grep WebFetch WebSearch Skill TodoWrite'],

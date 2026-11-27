@@ -5,6 +5,7 @@ import { readSecret, writeSecret, loadConfig, readSessionEnv, writeSessionEnv, U
 import { loadProject, projectPipeline } from './projects.mjs';
 import { stepView } from './gates.mjs';
 import { credentials as anthropicCredentials } from './backends/anthropic-api.mjs';
+import { request as aimlapiRequest, AimlApiError } from './backends/aimlapi.mjs';
 import { voiceConfig } from './voice/index.mjs';
 import { ElevenLabs } from './voice/elevenlabs.mjs';
 
@@ -15,6 +16,13 @@ export const KEYS = {
     env: 'ANTHROPIC_API_KEY',
     get: 'console.anthropic.com › Settings › API keys',
     for: 'the Claude API backend (you pay per token). Not needed with Claude Code, which uses your own login.',
+  },
+  aimlapi: {
+    name: 'AI/ML API key',
+    secret: 'aimlapi_api_key',
+    env: 'AIMLAPI_API_KEY',
+    get: 'aimlapi.com › Dashboard › API keys (https://aimlapi.com/app/keys)',
+    for: 'the AI/ML API backend: Claude, GPT, Gemini and other models with one key (you pay per token).',
   },
   elevenlabs: {
     name: 'ElevenLabs API key',
@@ -51,12 +59,14 @@ export function keyValue(root, id) {
 
 // Which keys a project uses, given how the studio is set up. `steps` narrows it to the work that's about to run.
 //   anthropic:  the project runs on the Claude API backend
+//   aimlapi:    the project runs on the AI/ML API backend
 //   elevenlabs: the studio narrates with ElevenLabs and the work makes sound (voice, effects, music)
 export function keysFor(root, { backend, pipeline, steps } = {}) {
   const using = backend || loadConfig(root).backend;
   if (using === 'demo') return [];
   const need = [];
   if (using === 'anthropic-api') need.push('anthropic');
+  if (using === 'aimlapi') need.push('aimlapi');
   const work = (steps || pipeline?.steps || []).flatMap((s) => s.work || []);
   if (voiceConfig(root).engine === 'elevenlabs' && work.includes('audio')) need.push('elevenlabs');
   return need;
@@ -103,6 +113,18 @@ export async function verifyKey(root, id, value, { fetch = globalThis.fetch } = 
       if (res.ok) return { ok: true, detail: 'the Claude API accepted it' };
       if (res.status === 401 || res.status === 403) return { ok: false, detail: 'the Claude API refused it (check that you copied the whole key)' };
       return { ok: null, detail: `couldn't check it (Claude API answered ${res.status})` };
+    }
+    if (id === 'aimlapi') {
+      // GET /v1/key: the key's own record (free); only ever sent to api.aimlapi.com, redirects not followed.
+      try {
+        await aimlapiRequest(key, '/key', { fetch });
+        return { ok: true, detail: 'AI/ML API accepted it' };
+      } catch (e) {
+        if (!(e instanceof AimlApiError) || !e.status) throw e;
+        if (e.status === 401) return { ok: false, detail: 'AI/ML API refused it (check that you copied the whole key)' };
+        // 403: the key is real but limited to some endpoints, so it can't read its own record.
+        return { ok: null, detail: `couldn't check it (AI/ML API answered ${e.status})` };
+      }
     }
     if (id === 'uploadpost') {
       const res = await fetch(`${process.env.UPLOAD_POST_API || 'https://api.upload-post.com'}/api/uploadposts/me`, { headers: { Authorization: `Apikey ${key}` } });

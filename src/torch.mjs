@@ -201,7 +201,7 @@ reviews every reviewed step. This file is rewritten before every session: read i
 - **The gate protocol:** \`.mortiflix/GATES.md\`. Read it before your first \`mfx\` command.
 - **Production checklist:** \`checklist.md\` (keep it current: it's how the next session resumes).
 - **Why this session started:** ${reason}
-- **Steps you can work on now:** ${runnable.join(', ') || 'none (stop after the handoff)'}${backend === 'anthropic-api' ? `
+- **Steps you can work on now:** ${runnable.join(', ') || 'none (stop after the handoff)'}${['anthropic-api', 'aimlapi'].includes(backend) ? `
 - **Your tools:** \`bash\` (a persistent shell in this folder; commands time out after 10 minutes, so long renders go through
   \`mfx render\`) and the file editor. Read a skill with the editor's view command before following it.` : ''}
 

@@ -66,7 +66,7 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
   del(k) { try { localStorage.removeItem(k); } catch { /* private mode */ } },
 };
-const BACKEND_NAMES = { 'claude-code': 'Claude Code', 'anthropic-api': 'Claude API', demo: 'Demo' };
+const BACKEND_NAMES = { 'claude-code': 'Claude Code', 'anthropic-api': 'Claude API', aimlapi: 'AI/ML API', demo: 'Demo' };
 const ICONS = { approved: ['✓', 'done'], done: ['✓', 'done'], skipped: ['–', ''], in_review: ['●', 'review'], changes: ['↺', 'changes'], editing: ['✎', 'review'], working: ['…', ''], ready: ['○', ''], blocked: ['·', ''] };
 const STATE_WORDS = { approved: 'approved', done: 'done', skipped: 'skipped', in_review: 'waiting for you', changes: 'changes asked', editing: 'editing in Mortiflix Studio', working: 'in progress', ready: 'up next', blocked: 'later' };
 const icon = (state) => { const [g, c] = ICONS[state] || ['·', '']; return h('span', { class: `ico ${c}`, 'aria-hidden': 'true' }, g); };
@@ -755,14 +755,15 @@ async function settingsView() {
   const checks = await api('/api/checks');
   const c = { ...studio.config };
   let apiKey;
+  let aimlKey;
   const msg = h('span', { class: 'okmsg' });
   const field = (label, control, help) => h('div', { class: 'field' }, h('label', null, label), h('div', null, control, help ? h('div', { class: 'help' }, help) : null));
   const toggle = (key, text) => h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: c[key], onchange: (e) => { c[key] = e.target.checked; } }), text);
 
   const backendRows = Object.entries(studio.backends).map(([name, b]) => h('li', { class: 'row', style: { cursor: 'pointer' }, onclick: () => { c.backend = name; draw(); } },
     h('input', { type: 'radio', name: 'backend', checked: c.backend === name, 'aria-label': BACKEND_NAMES[name] }),
-    h('div', { class: 'main' }, h('span', { class: 'title' }, { 'claude-code': 'Your Claude Code', 'anthropic-api': 'Claude API with your key', demo: 'Demo' }[name] || name),
-      h('div', { class: 'meta' }, { 'claude-code': 'Runs `claude -p` with your own login or plan.', 'anthropic-api': 'Mortiflix runs the agent loop on the API; you pay per token.', demo: 'Placeholder work, no Claude: for trying the studio.' }[name])),
+    h('div', { class: 'main' }, h('span', { class: 'title' }, { 'claude-code': 'Your Claude Code', 'anthropic-api': 'Claude API with your key', aimlapi: 'AI/ML API with your key', demo: 'Demo' }[name] || name),
+      h('div', { class: 'meta' }, { 'claude-code': 'Runs `claude -p` with your own login or plan.', 'anthropic-api': 'Mortiflix runs the agent loop on the API; you pay per token.', aimlapi: 'Claude, GPT, Gemini and more with one key; Mortiflix runs the agent loop, you pay per token.', demo: 'Placeholder work, no Claude: for trying the studio.' }[name])),
     h('div', { class: 'end' }, h('span', { class: `chip ${b.ok ? 'ok' : 'bad'}` }, b.ok ? 'ready' : 'not set up'))));
 
   const body = h('div');
@@ -774,6 +775,10 @@ async function settingsView() {
       field('Model', h('input', { type: 'text', placeholder: 'claude-opus-5-5', value: c.model || '', oninput: (e) => { c.model = e.target.value; } })),
       field('Effort', choiceChips(['low', 'medium', 'high', 'xhigh', 'max'], c.effort, (v) => { c.effort = v; }), 'High suits most videos; higher is slower and costs more.'),
       field('Tools', h('div', null, toggle('webTools', 'Web search and fetch for research'), toggle('fallbacks', 'Refusal fallbacks (another model continues if one declines)'))),
+    ] : c.backend === 'aimlapi' ? [
+      field('API key', h('input', { type: 'password', autocomplete: 'off', placeholder: studio.aimlapi_key_set ? 'Saved (type to replace)' : studio.aimlapi_key_env ? 'Using AIMLAPI_API_KEY' : 'Your AI/ML API key', oninput: (e) => { aimlKey = e.target.value; } }),
+        'Stored only in the studio folder (secrets.json, readable by you alone). Never shown again, never sent anywhere but api.aimlapi.com.'),
+      field('Model', h('input', { type: 'text', placeholder: 'anthropic/claude-sonnet-5', value: c.model || '', oninput: (e) => { c.model = e.target.value; } }), 'Any chat model id from aimlapi.com/models that supports tools.'),
     ] : c.backend === 'claude-code' ? [
       field('Model', h('input', { type: 'text', placeholder: 'Claude Code\'s default', value: c.model || '', oninput: (e) => { c.model = e.target.value; } })),
       field('Sandbox', toggle('sandbox', 'Run each session inside bubblewrap (Linux)'), 'The session then sees only its project folder, read-only system files and its Claude login.'),
@@ -785,6 +790,7 @@ async function settingsView() {
     try {
       const patch = { backend: c.backend, model: c.model || null, effort: c.effort, sandbox: c.sandbox, webTools: c.webTools, fallbacks: c.fallbacks, maxSessionMinutes: Number(c.maxSessionMinutes) };
       if (apiKey !== undefined && apiKey !== '') patch.api_key = apiKey;
+      if (aimlKey !== undefined && aimlKey !== '') patch.aimlapi_key = aimlKey;
       studio = await api('/api/config', { method: 'PUT', body: patch });
       msg.textContent = 'Saved';
       setTimeout(() => { msg.textContent = ''; }, 2000);
